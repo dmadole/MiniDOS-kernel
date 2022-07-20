@@ -1105,10 +1105,8 @@ cklstlmp:  glo     r7                  ; save lump value
 
            sep     scall               ; get file offset
            dw      getfdeof
-           ghi     rf                  ; store for subtraction
-           str     r2                  ; store for mask operation
-           ldi     LMPMASK             ; retrieve mask
-           and                         ; and mask the high byte
+           ghi     rf
+           ani     LMPMASK             ; and mask the high byte
            stxd                        ; then store for later
            glo     rf
            stxd
@@ -1121,18 +1119,14 @@ cklstlmp:  glo     r7                  ; save lump value
            irx                         ; move to eof on stack
            sm                          ; perform subtract
            irx                         ; point to high byte
-           ghi     r7
-           sex     r8                  ; need to mask high byte
-           and                         ; keep only offset portion
-           sex     r2                  ; point x back to stack
+           ghi     r7                  ; need to mask high byte
+           ani     LMPMASK             ; keep only offset portion
            smb                         ; perform subtract of high byte
            lbnf    cklstdone           ; jump if not beyond eof
            glo     r7                  ; get offset
            plo     rf                  ; and move for eof
            ghi     r7
-           sex     r8                  ; need to mask high byte
-           and
-           sex     r2                  ; point x back to stack
+           ani     LMPMASK             ; need to mask high byte
            phi     rf
            sep     scall               ; write eof back
            dw      setfdeof
@@ -1494,12 +1488,10 @@ seekcont:  sep     scall               ; read the corresponding sector
            stxd
            ghi     rf
            stxd
-           ldi     LMPMASK             ; retrieve it
-           str     r2                  ; save it
            inc     rd                  ; point 2nd lsb of ofs
            inc     rd
            lda     rd                  ; get msb of lump offset
-           and                         ; and mask it
+           ani     LMPMASK             ; and mask it
            phi     rf                  ; save into rf
            lda     rd                  ; get low byte of lump offset
            plo     rf                  ; rf now holds new eof
@@ -1976,8 +1968,6 @@ checkeof:  glo     rf                  ; save rf
            stxd
            ghi     rf
            stxd
-           ldi     LMPMASK             ; retrieve it
-           plo     re                  ; and save it here
            glo     rd                  ; save rd
            stxd
            adi     8                   ; and move to flags
@@ -2031,14 +2021,10 @@ checkeof:  glo     rf                  ; save rf
            dec     rf                  ; move to msb of eof
            dec     rd                  ; move to next most byte of offset
            ldn     rf                  ; get byte from eof
-           str     r2                  ; this byte needs to be masked
-           glo     re                  ; get lump mask
-           and                         ; and mask eof byte
+           ani     LMPMASK             ; and mask eof byte
            stxd                        ; save it for now
            ldn     rd                  ; get offset byte
-           str     r2                  ; this must also be masked
-           glo     re                  ; get the mask
-           and                         ; and mask offset byte
+           ani     LMPMASK             ; and mask offset byte
            irx                         ; point x back to masked eof byte
            smb                         ; and continue subtraction
            lbnf    noeof               ; jump if not at or past eof
@@ -2081,10 +2067,8 @@ incofs1:   inc     rd                  ; move to 3rd byte
            stxd
            ghi     r8
            stxd
-           ldi     LMPMASK             ; retrieve lump mask
-           str     r2                  ; need to mask with byte 2 
            glo     re                  ; of the current file pointer
-           and                         ; combine with mask
+           ani     LMPMASK             ; combine with mask
            plo     re                  ; and keep in re
            glo     rd                  ; move descriptor to current sector
            adi     15
@@ -2750,7 +2734,7 @@ writupdt:  glo     rb
            lbnz    writnapp
 
            sep     scall               ; append a new lump if eof offset
-           dw      d_append            ; wrapped to zero
+           dw      append              ; wrapped to zero
 
 writnapp:  lbdf    writcopy            ; if eof offset is larger or equal
 
