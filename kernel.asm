@@ -4678,14 +4678,16 @@ gettmdt:   glo     rf                  ; save consumed register
            glo     rf
            ani     010h                ; see if RTC is installed
            lbz     no_rtc              ; jump if no rtc
-           ldi     0                   ; point to scratch area
+           ldi     high scratch        ; point to scratch area
            phi     rf
+           ldi     low scratch
            plo     rf
            sep     scall               ; get time and date
            dw      o_gettod
            lbdf    no_rtc              ; jump if rtc is unreadable
-           ldi     0                   ; point to scratch area
+           ldi     high scratch        ; point to scratch area
            phi     rf
+           ldi     low scratch
            plo     rf
 rtc_cont:  inc     rf                  ; point to year
            inc     rf
