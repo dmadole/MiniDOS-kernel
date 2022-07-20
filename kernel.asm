@@ -209,78 +209,6 @@ setfddwrd: plo     re
            sep     sret
 
 
-; ***************************************
-; *** Get offset from file descriptor ***
-; *** RD - file descriptor            ***
-; *** Returns: R8:R7 - current offset ***
-; ***************************************
-;getfdofs:  lda     rd                  ; retrieve offset
-;           phi     r8
-;           lda     rd
-;           plo     r8
-;           lda     rd
-;           phi     r7
-;           ldn     rd
-;           plo     r7
-;fdminus3:  dec     rd                  ; restore pointer
-;           dec     rd
-;           dec     rd
-;return:    sep     sret                ; return to caller
-
-; ***************************************
-; *** Set offset from file descriptor ***
-; *** RD - file descriptor            ***
-; *** R8:R7 - current offset          ***
-; ***************************************
-;setfdofs:  ghi     r8                  ; save offset into descriptor
-;           str     rd
-;           inc     rd
-;           glo     r8
-;           str     rd
-;           inc     rd
-;           ghi     r7
-;           str     rd
-;           inc     rd
-;           glo     r7
-;           str     rd
-;           br      fdminus3
-
-; ************************************
-; *** Get dta from file descriptor ***
-; *** RD - file descriptor         ***
-; *** Returns: RF - dta            ***
-; ************************************
-getfddta:  inc     rd                  ; move descriptor to dta
-           inc     rd
-           inc     rd
-           inc     rd
-           lda     rd                  ; get high byte of dta
-           phi     rf                  ; store into result
-           ldn     rd                  ; get low byte
-           plo     rf                  ; and store
-fdminus5:  dec     rd                  ; restore descriptor
-           dec     rd
-           dec     rd
-           dec     rd
-           dec     rd
-           sep     sret                ; and return to caller
-
-; **********************************
-; *** Set dta in file descriptor ***
-; *** RD - file descriptor       ***
-; *** RF - dta                   ***
-; **********************************
-setfddta:  inc     rd                  ; move descriptor to dta
-           inc     rd
-           inc     rd
-           inc     rd
-           ghi     rf                  ; write dta to descriptor
-           str     rd
-           inc     rd
-           glo     rf
-           str     rd
-           br      fdminus5            ; and return
-
 ; ********************************
 ; *** Get eof file descriptor  ***
 ; *** RD - file descriptor     ***
@@ -361,57 +289,6 @@ setfdflgs: plo     re                  ; save D
            br      fdminus8            ; and return
 
 ; *******************************************
-; *** Get dir sector from file descriptor ***
-; *** RD - file descriptor                ***
-; *** Returns: R8:R7 - dir sector         ***
-; *******************************************
-;getfddrsc: glo     rd                  ; move descriptor to flags
-;           adi     9
-;           plo     rd
-;           ghi     rd
-;           adci    0
-;           phi     rd
-;           lda     rd                  ; get dir sector
-;           phi     r8
-;           lda     rd
-;           plo     r8
-;           lda     rd
-;           phi     r7
-;           ldn     rd
-;           plo     r7
-;fdminus12: glo     rd                  ; move pointer back to beginning
-;           smi     12
-;           plo     rd
-;           ghi     rd
-;           smbi    0
-;           phi     rd
-;           sep     sret                ; and return to caller
-
-; *******************************************
-; *** Set dir sector in file descriptor   ***
-; *** RD - file descriptor                ***
-; *** R8:R7 - dir sector                  ***
-; *******************************************
-;setfddrsc: glo     rd                  ; move descriptor to flags
-;           adi     9
-;           plo     rd
-;           ghi     rd
-;           adci    0
-;           phi     rd
-;           ghi     r8                  ; store dir sector
-;           str     rd
-;           inc     rd
-;           glo     r8
-;           str     rd
-;           inc     rd
-;           ghi     r7
-;           str     rd
-;           inc     rd
-;           glo     r7
-;           str     rd
-;           br      fdminus12           ; and return
-
-; *******************************************
 ; *** Get dir offset from file descriptor ***
 ; *** RD - file descriptor                ***
 ; *** Returns: R9 - dir offset            ***
@@ -451,57 +328,6 @@ setfddrof: glo     rd                  ; move descriptor to flags
            glo     r9
            str     rd
            br      fdminus14
-
-; *******************************************
-; *** Get cur sector from file descriptor ***
-; *** RD - file descriptor                ***
-; *** Returns: R8:R7 - cur sector         ***
-; *******************************************
-;getfdsec:  glo     rd                  ; move descriptor to flags
-;           adi     15
-;           plo     rd
-;           ghi     rd
-;           adci    0
-;           phi     rd
-;           lda     rd                  ; get current sector
-;           phi     r8
-;           lda     rd
-;           plo     r8
-;           lda     rd
-;           phi     r7
-;           ldn     rd
-;           plo     r7
-;fdminus18: glo     rd                  ; move pointer back to beginning
-;           smi     18
-;           plo     rd
-;           ghi     rd
-;           smbi    0
-;           phi     rd
-;           sep     sret                ; and return to caller
-
-; *******************************************
-; *** Set cur sector in file descriptor   ***
-; *** RD - file descriptor                ***
-; *** R8:R7 - cur sector                  ***
-; *******************************************
-;setfdsec:  glo     rd                  ; move descriptor to flags
-;           adi     15
-;           plo     rd
-;           ghi     rd
-;           adci    0
-;           phi     rd
-;           ghi     r8                  ; store current sector
-;           str     rd
-;           inc     rd
-;           glo     r8
-;           str     rd
-;           inc     rd
-;           ghi     r7
-;           str     rd
-;           inc     rd
-;           glo     r7
-;           str     rd
-;           br      fdminus18           ; and return
 
 ; ******************************
 ; *** Convert sector to lump ***
