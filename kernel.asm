@@ -2233,26 +2233,9 @@ chkvldno:  ldi     1                   ; mark invalid
            ;   DF - Set if error occurred
            ;   D  - Error code
 
-read:      glo     rd                  ; advance to flags, but save before
-           stxd
-           adi     8
-           plo     rd
-           ghi     rd
-           str     r2
-           adci    0
-           phi     rd                  ; rd = fd+8 (flags)
-
-           ldn     rd                  ; save flags into re.0
-           plo     re
-
-           lda     r2                  ; restore original rd
-           phi     rd
-           ldn     r2
-           plo     rd                  ; rd = fd+0 (base)
-
-           glo     re                  ; check valid fd bit bit
-           ani     8
-           lbnz    rdvalid
+read:      sep     scall
+           dw      chkvld
+           lbnf    rdvalid
 
            ldi     2<<1 + 1            ; return d=2, df=1, invalid fd
            lbr     reterror
@@ -2504,26 +2487,9 @@ readpopr:  dec     rd
            ;   DF - Set if error occurred
            ;   D  - Error code
 
-write:     glo     rd                  ; advance to flags, but save before
-           stxd
-           adi     8
-           plo     rd
-           ghi     rd
-           str     r2
-           adci    0
-           phi     rd                  ; rd = fd+8 (flags)
-
-           ldn     rd                  ; save flags into re.0
-           plo     re
-
-           lda     r2                  ; restore original rd
-           phi     rd
-           ldn     r2
-           plo     rd                  ; rd = fd+0 (base)
-
-           glo     re                  ; check valid fd bit bit
-           ani     8
-           lbnz    wrvalid
+write:     sep     scall
+           dw      chkvld
+           lbnf    wrvalid
 
            ldi     2<<1 + 1            ; return d=2, df=1, invalid fd
            lbr     reterror
@@ -5325,7 +5291,7 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:   db      'Starting Elf/OS ...',10,13
+bootmsg:   db      'Starting Elf/OS Classic...',10,13
            db      'Version 4.2.0',10,13
            db      'Copyright 2004-2021 by Michael H Riley',10,13,0
 prompt:    db      10,13,'Ready',10,13,': ',0
@@ -5334,11 +5300,14 @@ errnf:     db      'File not found.',10,13,0
 initprg:   db      '/bin/init',0
 shellprg:  db      '/bin/shell',0
 defdir:    db      '/bin/',0
-           ds      80
+           ds      40
+
+         #if $>1c00h
+         #error Kernel size overflow
+         #endif
+
+           org     1c00h
 
 intdta:    ds      512
 mddta:     ds      512
-;           ds      128
-;stack:     db      0
-
 
