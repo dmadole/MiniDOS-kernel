@@ -103,7 +103,7 @@ iserve:    dec     r2
 ivec:      dw      intret
 
            org     400h
-version:   db      4,1,0
+version:   db      4,2,0
 
 build:     dw      [build]
 
@@ -5194,7 +5194,7 @@ oom:        smi     0                   ; set df
 
 
 bootmsg:   db      'Starting Elf/OS ...',10,13
-           db      'Version 4.1.0',10,13
+           db      'Version 4.2.0',10,13
            db      'Copyright 2004-2021 by Michael H Riley',10,13,0
 prompt:    db      10,13,'Ready',10,13,': ',0
 crlf:      db      10,13,0
