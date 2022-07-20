@@ -137,7 +137,7 @@ d_ideread: lbr     f_ideread           ; jump to bios ide read
 d_idewrite: lbr    f_idewrite          ; jump to bios ide write
 d_reapheap: lbr    reapheap            ; passthrough to heapreaper
 d_progend:  lbr    warm3
-d_lmpsize: lbr     lmpsize
+d_lmpsize: lbr     return              ; deprecated and unnecessary
            db      0,0,0,0
            db      0,0,0,0,0,0,0
 shelladdr: dw      0
@@ -148,8 +148,13 @@ heap:      dw      0
 d_incofs:  lbr     incofs1             ; internal vector, not a published call
 d_append:  lbr     append              ; internal vector, not a published call
 clockfrq:  dw      4000
-lmpshift:  db      0
-lmpmask:   db      0
+
+#define LMPSHIFT 3                     ; these are statically defined now
+#define LMPMASK 0fh
+
+lmpshift:  db      LMPSHIFT            ; variables kept but deprecated
+lmpmask:   db      LMPMASK
+
 curdrive:  db      0
 date_time: db      1,17,49,0,0,0
 secnum:    dw      0
@@ -338,11 +343,7 @@ sectolump: glo     rb                  ; save consumed registers
            stxd
            ghi     rb
            stxd
-           ldi     high lmpshift       ; need to see how many shifts are needed
-           phi     rb
-           ldi     low lmpshift
-           plo     rb
-           ldn     rb                  ; retrieve shift count
+           ldi     LMPSHIFT            ; retrieve shift count
            plo     re                  ; and set into shift counter
            glo     r8                  ; move sector to lump
            plo     rb
@@ -379,11 +380,7 @@ lmptosec1: ghi     rb                  ; perform shift
 ; *** RA - lump               ***
 ; *** Returns: R8:R7 - Sector ***
 ; *******************************
-lumptosec: ldi     high lmpshift       ; need to see how many shifts are needed
-           phi     r8
-           ldi     low lmpshift
-           plo     r8
-           ldn     r8                  ; get shift count
+lumptosec: ldi     LMPSHIFT            ; get shift count
            plo     re                  ; and put into shift counter
            glo     ra                  ; transfer lump to sector
            plo     r7
@@ -775,53 +772,6 @@ sector0:
            plo     r7
            sep     sret                ; return to caller
 
-; **************************************************
-; *** Set shift count for current disk lump size ***
-; **************************************************
-lmpsize:   sep     scall               ; need system sector
-           dw      sector0
-           ldi     02                  ; need value at 20Ah in system buffer
-           phi     rf
-           ldi     0ah
-           plo     rf
-           ldn     rf                  ; now have sectors per lump
-           plo     rf                  ; set here
-           ldi     0                   ; signify no shifts done
-           plo     re                  ; re will be shift counter
-lmpsize1:  inc     re                  ; increment shift count
-           glo     rf                  ; shift count
-           shr
-           plo     rf
-           lbnz    lmpsize1            ; loop until count is zero
-           dec     re                  ; correct for zero shifts
-           ldi     high lmpshift       ; need to store value
-           phi     rf
-           ldi     low lmpshift
-           plo     rf
-           glo     re                  ; get shift count
-           str     rf                  ; and save it
-
-           ldi     01h                 ; initial mask
-           plo     rf                  ; setup mask
-lmpsize2:  glo     re                  ; see if done with shifts
-           lbz     lmpsize3            ; jump if so
-           dec     re                  ; decrement shift count
-           glo     rf                  ; shift mask left
-           shl
-           ori     1                   ; set low bit
-           plo     rf                  ; and put back
-           lbr     lmpsize2            ; loop back to finish shifts
-lmpsize3:  glo     rf                  ; transfer result
-           plo     re
-           ldi     high lmpmask        ; need to get lmpshift
-           phi     rf
-           ldi     low lmpmask
-           plo     rf
-           glo     re                  ; retrieve mask
-           str     rf                  ; and store it.
-           sep     sret                ; return to caller
-        
-
 
 ; **********************************
 ; *** Get starting lump for file ***
@@ -1154,15 +1104,11 @@ cklstlmp:  glo     r7                  ; save lump value
            sep     scall               ; and write it back
            dw      setfdflgs
 
-           ldi     high lmpmask        ; need to get the lump mask
-           phi     r8
-           ldi     low lmpmask
-           plo     r8
            sep     scall               ; get file offset
            dw      getfdeof
            ghi     rf                  ; store for subtraction
            str     r2                  ; store for mask operation
-           ldn     r8                  ; retrieve mask
+           ldi     LMPMASK             ; retrieve mask
            and                         ; and mask the high byte
            stxd                        ; then store for later
            glo     rf
@@ -1262,11 +1208,7 @@ ldseclp:   ghi     rc                  ; see if done
            lbnz    ldsecgo             ; more to do
            glo     rc
            lbnz    ldsecgo
-ldsecct:   ldi     high lmpshift       ; need to build mask
-           phi     r8                  ; to figure relative sector in lump
-           ldi     low lmpshift
-           plo     r8
-           ldn     r8                  ; get the shift count
+ldsecct:   ldi     LMPSHIFT            ; get the shift count
            plo     r8                  ; R8.0 will be the count
            ldi     0                   ; will user R8.1 to build mask
            phi     r8
@@ -1443,11 +1385,7 @@ seekendlp: glo     ra                  ; see if have last lump
            ldx
            plo     r7
            sep     sret                ; return to caller
-seekendgo: ldi     high lmpshift       ; need to get the lump shift value
-           phi     rf                  ; in order to determine how much to
-           ldi     low lmpshift        ; add to the current offset
-           plo     rf
-           ldn     rf                  ; get the shift count
+seekendgo: ldi     LMPSHIFT            ; get the shift count
            plo     re                  ; and place into the loop counter
            ldi     02h                 ; set intial value at 512 bytes
            phi     rf
@@ -1557,11 +1495,7 @@ seekcont:  sep     scall               ; read the corresponding sector
            stxd
            ghi     rf
            stxd
-           ldi     high lmpmask        ; need to get lmpmask
-           phi     rf
-           ldi     low lmpmask 
-           plo     rf
-           ldn     rf                  ; retrieve it
+           ldi     LMPMASK             ; retrieve it
            str     r2                  ; save it
            inc     rd                  ; point 2nd lsb of ofs
            inc     rd
@@ -2043,11 +1977,7 @@ checkeof:  glo     rf                  ; save rf
            stxd
            ghi     rf
            stxd
-           ldi     high lmpmask        ; need to get lmpmask
-           phi     rf
-           ldi     low lmpmask 
-           plo     rf
-           ldn     rf                  ; retrieve it
+           ldi     LMPMASK             ; retrieve it
            plo     re                  ; and save it here
            glo     rd                  ; save rd
            stxd
@@ -2176,11 +2106,7 @@ incofs1:   inc     rd                  ; move to 3rd byte
            stxd
            ghi     r8
            stxd
-           ldi     high lmpmask        ; need to get lump mask
-           phi     r8
-           ldi     low lmpmask
-           plo     r8
-           ldn     r8                  ; retrieve lump mask
+           ldi     LMPMASK             ; retrieve lump mask
            str     r2                  ; need to mask with byte 2 
            glo     re                  ; of the current file pointer
            and                         ; combine with mask
@@ -4274,8 +4200,6 @@ kinit:     sep     scall               ; get free memory
            dec     r2
 kinit2:    dec     r2                  ; need 2 less
            dec     r2
-           sep     scall               ; get shift count for lump size
-           dw      lmpsize
            sep     sret                ; return to caller
 
 start:     sep     scall               ; get free memory
