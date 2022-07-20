@@ -6,10 +6,11 @@
 ; *** without express written permission from the author.         ***
 ; *******************************************************************
 
-; #define  ELF2K
+#include  ops.inc
+#include  bios.inc
 
          org     300h
-         include  ../bios.inc
+
 scratch: equ     010h
 keybuf:  equ     080h
 dta:     equ     100h
@@ -104,8 +105,10 @@ ivec:      dw      intret
            org     400h
 version:   db      4,1,0
 
-include    build.inc
-include    date.inc
+build:     dw      [build]
+
+date:      db      [month],[day]
+           dw      [year]
 
 sysfildes: db      0,0,0,0             ; current offset
            dw      0100h               ; dta
