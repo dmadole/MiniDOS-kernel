@@ -635,8 +635,7 @@ checkwrt1: glo     r7                  ; save consumed registers
 ; *** R8:R7 - Sector address to write ***
 ; ***    RD - File descriptor         ***
 ; ***************************************
-rawread:
-           sep     scall               ; see if requested sector is already in
+rawread:   sep     scall               ; see if requested sector is already in
            dw      secloaded
            lbnf    rawread1            ; jump if not
            sep     sret                ; otherwise return to caller
@@ -2066,30 +2065,6 @@ noeof:     ldi     0                   ; signal not at eof
 ; *** RD - file descriptor              ***
 ; *** Returns: DF=1 - new sector loaded ***
 ; *****************************************
-incofs:    inc     rd                  ; move to last byte of offset
-           inc     rd
-           inc     rd
-           ldn     rd                  ; get offset
-           adi     1                   ; increment it
-           str     rd                  ; and put back
-           plo     re                  ; keep copy of this byte
-           dec     rd                  ; point to previous byte
-           ldn     rd                  ; get offset
-           adci    0                   ; increment it
-           str     rd                  ; and put back
-           dec     rd                  ; point to previous byte
-           ldn     rd                  ; get offset
-           adci    0                   ; increment it
-           str     rd                  ; and put back
-           dec     rd                  ; point to previous byte
-           ldn     rd                  ; get offset
-           adci    0                   ; increment it
-           str     rd                  ; and put back
-           glo     re                  ; get first byte
-           lbz     incofs1             ; jump if it is zero
-incofse1:  ldi     0
-           shr
-           sep     sret                ; return to caller
 incofs1:   inc     rd                  ; move to 3rd byte
            inc     rd
            ldn     rd                  ; retrieve it
@@ -2198,6 +2173,9 @@ incofs4:   str     rd                  ; put it back
 incofs3:   ldn     rd                  ; get flags
            ani     0fbh                ; indicate not last lump
            lbr     incofs4             ; and continue
+incofse1:  ldi     0
+           shr
+           sep     sret                ; return to caller
 
 ; **********************************************
 ; *** Set R9 to current offset + DTA address ***
@@ -2256,180 +2234,598 @@ chkvldno:  ldi     1                   ; mark invalid
            shr
            sep     sret                ; and return
 
-; ***************************************
-; *** Read bytes from file            ***
-; *** RD - file descriptor            ***
-; *** RC - Number of bytes to read    ***
-; *** RF - Buffer to store bytes in   ***
-; *** Returns: RC - actual bytes read ***
-; ***          DF=0 - no errors       ***
-; ***          DF=1 - error           ***
-; ***                 D - Error code  ***
-; ***************************************
-read:      sep     scall               ; check for valid FILDES
-           dw      chkvld
-           lbnf    readgo              ; jump if good
-           ldi     2                   ; Signal invalid FILDES
-           sep     sret                ; and return
-readgo:    glo     rb                  ; save consumed registers
+
+           ; Read bytes from file
+           ;
+           ; Input:
+           ;   RC - Number of bytes to read
+           ;   RD - Pointer to file descriptor
+           ;   RF - Pointer to read buffer
+           ;
+           ; Output:
+           ;   RC - Number of bytes actually read
+           ;   RD - Unchanged
+           ;   RF - Points after last byte read
+           ;   DF - Set if error occurred
+           ;   D  - Error code
+
+read:      glo     rd                  ; advance to flags, but save before
            stxd
-           ghi     rb
+           adi     8
+           plo     rd
+           ghi     rd
+           str     r2
+           adci    0
+           phi     rd                  ; rd = fd+8 (flags)
+
+           ldn     rd                  ; save flags into re.0
+           plo     re
+
+           lda     r2                  ; restore original rd
+           phi     rd
+           ldn     r2
+           plo     rd                  ; rd = fd+0 (base)
+
+           glo     re                  ; check valid fd bit bit
+           ani     8
+           lbnz    rdvalid
+
+           ldi     2<<1 + 1            ; return d=2, df=1, invalid fd
+           lbr     reterror
+
+           ; Check size of read request, if it's zero, declare success.
+
+rdvalid:   glo     rc                  ; if there is nothing to do, return
+           lbnz    nonzero
+           ghi     rc
+           lbz     reterror            ; return d=0, df=0, success
+
+nonzero:   glo     r8                  ; save r8.0 to use for flags
            stxd
-           glo     r9
+
+           glo     r9                  ; save r9 to use for dta pointer
            stxd
            ghi     r9
            stxd
-           sep     scall               ; setup transfer address
-           dw      settrx
-           ldi     0                   ; clear bytes read counter
-           phi     rb
-           plo     rb
-readlp:    glo     rc                  ; see if more bytes to read
-           lbnz    read1               ; jump if so
-           ghi     rc
-           lbnz    read1
-           ghi     rb                  ; move bytes read
-           phi     rc
-           glo     rb
-           plo     rc
-           irx                         ; recover consumed registers
-           ldxa
-           phi     r9
-           ldxa
-           plo     r9
-           ldxa
-           phi     rb
-           ldx
-           plo     rb
-           ldi     0                   ; signal no error
-           shr
-           sep     sret                ; and return to caller
-read1:     sep     scall               ; check for eof
-           dw      checkeof
-           lbnf    read2               ; jump if not at end
-           ldi     0                   ; clear the bytes left
-           phi     rc
-           plo     rc
-           lbr     readlp              ; and loop back
-read2:     lda     r9                  ; get byte from dta
-           str     rf                  ; store into buffer
-           inc     rf
-           inc     rb                  ; increment byte count
-           dec     rc                  ; decrement count
-           sep     scall               ; increment offset
-           dw      incofs
-           lbnf    readlp              ; and loop back if not a new sector
-           sep     scall               ; setup transfer address
-           dw      settrx
-           lbr     readlp              ; then continue
 
-; ******************************************
-; *** Write bytes to file                ***
-; *** RD - file descriptor               ***
-; *** RC - Number of bytes to write      ***
-; *** RF - Buffer of bytes to write      ***
-; *** Returns: RC - actual bytes written ***
-; ***          DF=0 - no errors          ***
-; ***          DF=1 - error              ***
-; ***                 D - Error code     ***
-; ******************************************
-write:     glo     rb                  ; save consumed registers
-           stxd
-           ghi     rb
-           stxd
-           glo     ra
+           glo     ra                  ; save ra for bytes requested
            stxd
            ghi     ra
            stxd
-           glo     r9
+
+           glo     rb                  ; save rb to use for loop counter
+           stxd
+           ghi     rb
+           stxd
+
+           glo     rc                  ; copy bytes requested to ra
+           plo     ra
+           ghi     rc
+           phi     ra
+
+           ldi     0
+           plo     r8                  ; clear flags byte
+           plo     rc                  ; clear bytes read counter
+           phi     rc
+
+
+           ; loops back to here
+
+readloop:  inc     rd
+           inc     rd                  ; rd = fd+2 (file offset nlsb)
+
+
+           ; Check if we have already checked for an eof adjustment to 
+           ; reduce the read bytes requested, if so, dont do it again.
+
+           glo     r8
+           ani     1
+           lbnz    readdata
+
+
+           ; The following checks if we are in the "final lump" which is the
+           ; last allocation unit in the file, and if so, we are near eof.
+           ; Its not actually easily possible to know how much data is
+           ; remaining in the file until we get to this point, as eof is only
+           ; stored relative to the start of this final allocation unit.
+
+           glo     rd                  ; this way we dont have to fix the
+           adi     6                   ; result back if the branch below not
+           plo     rb                  ; taken, also the separate copy is
+           ghi     rd                  ; used even if the branch is taken
+           adci    0
+           phi     rb                  ; rb = fd+8 (flags)
+
+           ldn     rb                  ; check final lump flag
+           ani     4
+           lbz     readdata
+
+
+           ; If we are in the final lump, then calculate how much data is
+           ; remaining in the file and if more data has been requested than
+           ; is in the file, reduce the request to match what is available.
+           ; Since the request size is kept across loops, this adjustment
+           ; only needs to be done once, and only can be done once.
+
+           inc     r8                  ; remember weve already done this
+
+           dec     rb                  ; rb = fd+7 (eof offset lsb)
+           inc     rd                  ; rd = fd+3 (file offset lsb)
+
+           ldn     rb                  ; get eof offset lsb and subtract file
+           sex     rd                  ; offset lsb from it
+           sm 
+           plo     r9
+
+           dec     rd                  ; rd = fd+2 (file offset nlsb)
+           dec     rb                  ; rb = fd+6 (eof offset msb)
+
+           ldi     LMPMASK             ; and lump mask msb with file offset
+           and                         ; nlsb, then subtract from eof offset
+           sex     rb                  ; msb
+           sdb
+           phi     r9                  ; r9 = bytes to eof
+           sex     r2
+
+           lbnz    readneof            ; if bytes remaining to eof are not
+           glo     r9                  ; zero then continue reading
+           lbz     readpopr
+
+readneof:  glo     r9
+           str     r2
+           glo     ra                  ; compare bytes left in file to bytes
+           sd                          ; requested to read (ra)
+           ghi     r9
+           str     r2
+           ghi     ra
+           sdb
+           lbdf    readdata            ; if ra <= bytes left leave as-is
+
+           ghi     r9                  ; else replace request count with
+           phi     ra                  ; what is actually left in file
+           glo     r9 
+           plo     ra
+
+
+           ; Setup the source copy pointer into the current sector in memory
+           ; and determine how much data we are going to copy, which will be
+           ; the lesser of whats left in the sector or what was requested.
+
+readdata:  lda     rd                  ; get sector offset as low 9 bits of
+           ani     1
+           phi     rb
+           lda     rd                  ; rd = fd+4 (dta msb)
+           plo     rb                  ; rb = sector offset
+
+           sex     rd                  ; add dta address to sector offset
+           inc     rd                  ; in rb and put result into r9
+           glo     rb                  ; as copy source pointer
+           add
+           plo     r9
+           dec     rd
+           ghi     rb
+           adc
+           phi     r9                  ; rd = fd+4 (dta msb)
+           sex     r2
+
+           glo     rb                  ; find what is left in sector by
+           sdi     low 512             ; subtracting sector offset from 512
+           plo     rb                  ; overwrite original value
+           ghi     rb
+           sdbi    high 512
+           phi     rb
+
+           glo     rb                  ; compare bytes requested to bytes
+           str     r2
+           glo     ra                  ; left in sector
+           sm 
+           ghi     rb
+           str     r2
+           ghi     ra
+           smb
+           lbdf    readleft            ; if fewer in sector, read that many
+
+           ghi     ra                  ; otherwise read what was requested
+           phi     rb
+           glo     ra
+           plo     rb
+           lbr     readupdt
+
+readleft:  inc     r8                  ; set flag to load more data
+           inc     r8
+
+readupdt:  glo     rb
+           str     r2
+           glo     ra                  ; subtract bytes we are going to copy 
+           sm                          ; from bytes requested and at the 
+           plo     ra                  ; same time put into loop counter rb
+           ghi     rb
+           str     r2
+           ghi     ra
+           smb
+           phi     ra
+
+           glo     rb                  ; add bytes we are going to copy to rc
+           str     r2
+           glo     rc
+           add
+           plo     rc
+           ghi     rb
+           str     r2
+           ghi     rc
+           adc
+           phi     rc
+
+           dec     rd                  ; rd = fd+3 (file offset lsb)
+
+           sex     rd                  ; add the amount we are going to copy
+           glo     rb                  ; onto the current file offset
+           add
+           stxd
+           ghi     rb
+           adc
+           stxd
+           ldi     0
+           adc
+           stxd
+           ldi     0
+           adc
+           str     rd                  ; rd = fd+0 (base)
+           sex     r2
+
+readcopy:  lda     r9                  ; copy rb bytes from dta at m(r9)
+           str     rf                  ; to user buffer at m(rf)
+           inc     rf
+           dec     rb
+           glo     rb
+           lbnz    readcopy
+           ghi     rb
+           lbnz    readcopy
+
+           glo     r8                  ; check if flag is set to read data
+           ani     2
+           lbz     readrest            ; if not, we are done
+
+           dec     r8                  ; clear read data flag
+           dec     r8
+
+           sep     scall               ; get another sector
+           dw      incofs1
+
+           glo     ra
+           lbnz    readloop
+           ghi     ra
+           lbnz    readloop            ; and finish satisfying request
+
+           lbr     readrest
+
+readpopr:  dec     rd
+           dec     rd                  ; rd = fd+0 (start)
+
+           lbr     readrest
+
+
+
+           ; Write bytes to file
+           ;
+           ; Input:
+           ;   RC - Number of bytes to write
+           ;   RD - Pointer to file descriptor
+           ;   RF - Pointer to write buffer
+           ;
+           ; Output:
+           ;   RC - Number of bytes actually written
+           ;   RD - Unchanged
+           ;   RF - Points after last byte written
+           ;   DF - Set if error occurred
+           ;   D  - Error code
+
+write:     glo     rd                  ; advance to flags, but save before
+           stxd
+           adi     8
+           plo     rd
+           ghi     rd
+           str     r2
+           adci    0
+           phi     rd                  ; rd = fd+8 (flags)
+
+           ldn     rd                  ; save flags into re.0
+           plo     re
+
+           lda     r2                  ; restore original rd
+           phi     rd
+           ldn     r2
+           plo     rd                  ; rd = fd+0 (base)
+
+           glo     re                  ; check valid fd bit bit
+           ani     8
+           lbnz    wrvalid
+
+           ldi     2<<1 + 1            ; return d=2, df=1, invalid fd
+           lbr     reterror
+
+           ; Check size of read request, if it's zero, declare success.
+
+wrvalid:   glo     rc                  ; if there is nothing to do, return
+           lbnz    chkwrite
+           ghi     rc
+           lbz     reterror            ; return d=0, df=0, success
+
+
+           ; Only if this is a write operation, check the read-only flag.
+
+chkwrite:  glo     re                  ; check if fd is read-only
+           ani     2
+           lbz     nordonly
+
+           ldi     1<<1 + 1            ; return d=1, df=1, read-only
+           lbr     reterror
+
+
+           ; Push the registers that are used that are common to both
+           ; the read and write code paths and initialize some register
+           ; values that are also common to both. Put the read or write
+           ; indicator into RE.0 at this point to survive the pushes.
+
+nordonly:  glo     r8                  ; save r8.0 to use for flags
+           stxd
+
+           glo     r9                  ; save r9 to use for dta pointer
            stxd
            ghi     r9
            stxd
-           glo     rd                  ; get copy of descriptor
-           adi     8                   ; pointing at flags
+
+           glo     ra                  ; save ra for bytes requested
+           stxd
+           ghi     ra
+           stxd
+
+           glo     rb                  ; save rb to use for loop counter
+           stxd
+           ghi     rb
+           stxd
+
+           glo     rc                  ; copy bytes requested to ra
            plo     ra
-           ghi     rd
-           adci    0
-           phi     ra
-           ldn     ra                  ; get flags
-           ani     2                   ; see if file is read only
-           lbnz    writeer             ; exit if so
-           ldn     ra                  ; get flags
-           ani     8                   ; check for valid FILDES
-           lbz     writeer2            ; jump if not
-           sep     scall               ; setup transfer address
-           dw      settrx
-           ldi     0                   ; clear bytes read counter
-           phi     rb
-           plo     rb
-writelp:   glo     rc                  ; see if more bytes to read
-           lbnz    write1              ; jump if so
            ghi     rc
-           lbnz    write1
-           ghi     rb                  ; move bytes read
-           phi     rc
-           glo     rb
-           plo     rc
-           ldi     0
-           shr                         ; clear DF
-writeex:   plo     re                  ; save result code
-           irx                         ; recover consumed registers
-           ldxa
-           phi     r9
-           ldxa
-           plo     r9
-           ldxa
            phi     ra
-           ldxa
-           plo     ra
-           ldxa
+
+           ldi     0
+           plo     r8                  ; clear flags byte
+           plo     rc                  ; clear bytes read counter
+           phi     rc
+
+           ; The write-specific code starts from here, this is reached by
+           ; the LSKP instruction on the proir page.
+
+           glo     r6                  ; save r9 to use for dta pointer
+           stxd
+           ghi     r6
+           stxd
+
+           glo     r7                  ; save r9 to use for dta pointer
+           stxd
+           ghi     r7
+           stxd
+
+
+           ; Processing of write operations loops back to here
+
+writloop:  inc     rd
+           inc     rd                  ; rd = fd+2 (file offset nlsb)
+
+           lda     rd                  ; get sector offset as low 9 bits of
+           ani     1                   ; file offset, save in rb
            phi     rb
-           ldx
+           lda     rd                  ; rd = fd+4 (dta msb)
            plo     rb
-           glo     re                  ; recover error result
-           sep     sret                ; and return to caller
-writeer:   ldi     1                   ; signal error
-           shr                         ; shift into DF
-           ldi     1                   ; signal read-only error
-           lbr     writeex             ; then exit
-writeer2:  ldi     1                   ; signal error
-           shr                         ; shift into DF
-           ldi     2                   ; signal invalid FILDES
-           lbr     writeex             ; then exit
-write1:    ldn     ra                  ; get flags byte
-           ori     011h                ; set written flags
-           str     ra                  ; and put back
-           lda     rf                  ; get byte from buffer
-           str     r9                  ; write into dta
+
+           sex     rd
+           inc     rd                  ; add dta address to sector offset
+           glo     rb
+           add                         ; on stack and put result into r9
+           plo     r9                  ; as copy destination pointer
+           dec     rd
+           ghi     rb
+           adc
+           phi     r9
+           sex     r2
+
+           glo     rb                  ; find the space left in sector by
+           sdi     low 512             ; subtracting sector offset from 512
+           plo     rb                  ; overwrite original value
+           ghi     rb
+           sdbi    high 512
+           phi     rb
+
+           glo     rb                  ; compare bytes to write to bytes
+           str     r2                  ; left in sector
+           glo     ra
+           sm 
+           ghi     rb
+           str     r2
+           ghi     ra
+           smb
+           lbdf    writleft            ; if fewer in sector, write that many
+
+           ghi     ra                  ; otherwise write what was requested
+           phi     rb
+           glo     ra
+           plo     rb
+           lbr     writupdt
+
+writleft:  inc     r8                  ; set flag to load more data
+           inc     r8
+
+writupdt:  glo     rb
+           str     r2
+           glo     ra                  ; subtract bytes we are going to copy 
+           sm                          ; from bytes requested and at the 
+           plo     ra                  ; same time put into loop counter rb
+           ghi     rb
+           str     r2
+           ghi     ra
+           smb
+           phi     ra
+
+           glo     rb
+           str     r2
+           glo     rc
+           add
+           plo     rc
+           ghi     rb
+           str     r2
+           ghi     rc
+           adc
+           phi     rc
+
+           dec     rd                  ; rd = fd+3 (file offset lsb)
+
+           sex     rd                  ; add the amount we are going to copy
+           glo     rb                  ; onto the current file offset
+           add
+           stxd
+           ghi     rb
+           adc
+           stxd
+           ldi     0
+           adc
+           stxd
+           ldi     0
+           adc
+           str     rd                  ; rd = fd+0 (base)
+           sex     r2
+
+           ; The following checks if we are in the "final lump" which is the
+           ; last allocation unit in the file, and if so, we are near eof.
+           ; Its not actually easily possible to know how much data is
+           ; remaining in the file until we get to this point, as eof is only
+           ; stored relative to the start of this final allocation unit.
+
+           glo     rd                  ; this way we dont have to fix the
+           adi     8                   ; result back if the branch below not
+           plo     r7                  ; taken, also the separate copy is
+           ghi     rd                  ; used even if the branch is taken
+           adci    0
+           phi     r7                  ; r7 = fd+8 (flags)
+
+           ldn     r7                  ; get flags 
+           ori     16+1                ; mark sector and file as written to
+           str     r7
+           ani     4                   ; check if in final lump
+           lbz     writcopy
+
+           ; If we are in the final lump, then find if the file offset is
+           ; past the eof offset, if it is, then update the eof offset to
+           ; match the file offset since we are extending the file.
+
+           dec     r7                  ; r7 = fd+7 (eof offset lsb)
+
+           inc     rd
+           inc     rd
+           inc     rd                  ; rd = fd+3 (file offset lsb)
+
+           ldn     rd                  ; get file offset lsb and subtract eof
+           plo     r6
+           sex     r7                  ; offset lsb from it
+           sd
+
+           dec     rd                  ; rd = fd+2 (file offset nlsb)
+           dec     r7                  ; r7 = fd+6 (eof offset msb)
+
+           ldi     LMPMASK             ; and lump mask msb with file offset
+           sex     rd
+           and                         ; nlsb, then subtract eof offset from it
+           phi     r6
+           sex     r7                  ; msb
+           sdb
+           sex     r2
+
+           dec     rd
+           dec     rd                  ; rd = fd+0 (begin)
+
+           glo     r6
+           lbnz    writnapp
+           ghi     r6
+           lbnz    writnapp
+
+           sep     scall               ; append a new lump if eof offset
+           dw      d_append            ; wrapped to zero
+
+writnapp:  lbdf    writcopy            ; if eof offset is larger or equal
+
+           ghi     r6
+           str     r7
+           inc     r7
+           glo     r6
+           str     r7
+
+           ; Setup the destination copy pointer into the current sector in
+           ; memory and determine how much data we are going to copy, which
+           ; will be the lesser of whats left in the sector or what was
+           ; requested.
+
+writcopy:  lda     rf                  ; copy rb bytes from dta at m(r9)
+           str     r9                  ; to user buffer at m(rf)
            inc     r9
-           inc     rb                  ; increment byte count
-           dec     rc                  ; decrement to write count
-           sep     scall               ; check for eof
-           dw      checkeof
-           lbnf    write2              ; jump if not at end
-           dec     ra                  ; point to low byte of eof
-           ldn     ra                  ; retrieve it
-           adi     1                   ; add 1 to it
-           str     ra                  ; and put it back
-           dec     ra                  ; point to high byte
-           ldn     ra                  ; retrieve it
-           adci    0                   ; propagate the carry
-           ani     0fh                 ; clear high nybble
-           str     ra                  ; and put back
-           inc     ra                  ; move back to flags
-           inc     ra
-           lbnz    write2              ; loop back if high byte is nonzero
-           dec     ra                  ; retrieve low byte of eof
-           lda     ra
-           lbnz    write2              ; loop back if nonzero
-           sep     scall               ; append a new lump
-           dw      append
-write2:    sep     scall               ; increment offset
-           dw      incofs
-           lbnf    writelp             ; and loop back if not a new sector
-           sep     scall               ; setup transfer address
-           dw      settrx
-           lbr     writelp             ; then continue
+           dec     rb
+           glo     rb
+           lbnz    writcopy
+           ghi     rb
+           lbnz    writcopy
+
+           glo     r8                  ; check if flag is set to read data
+           ani     2
+           lbz     writretn            ; if not, we are done
+
+           dec     r8                  ; clear read data flag
+           dec     r8
+
+           sep     scall               ; get another sector
+           dw      incofs1
+
+           glo     ra
+           lbnz    writloop
+           ghi     ra
+           lbnz    writloop            ; and finish satisfying request
+
+writretn:  inc     r2
+
+           lda     r2                  ; restore saved r9
+           phi     r7
+           lda     r2
+           plo     r7
+
+           lda     r2                  ; restore saved r9
+           phi     r6
+           ldn     r2
+           plo     r6
+
+readrest:  inc     r2
+
+           lda     r2                  ; restore saved rb
+           phi     rb
+           lda     r2
+           plo     rb
+
+           lda     r2                  ; restore saved ra
+           phi     ra
+           lda     r2
+           plo     ra
+
+           lda     r2                  ; restore saved r9
+           phi     r9
+           lda     r2
+           plo     r9
+
+           ldn     r2
+           plo     r8
+
+           ldi     0
+
+reterror:  shr
+           sep     sret
+
        
 ; **************************************
 ; *** Close a file                   ***
