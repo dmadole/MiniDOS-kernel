@@ -438,45 +438,51 @@ lmpsecofs: glo     ra                  ; get low byte of lump
 ; ***    RD - File descriptor                  ***
 ; *** Returns: DF=1 - Sector already loaded    ***
 ; ***          DF=0 - Sector not loaded        ***
-; ************************************************
-secloaded: glo     rd                  ; save descriptor address
+;
+ ************************************************
+
+secloaded: ghi     re                  ; only have to save half
            stxd
-           adi     15                  ; point to current sector
-           plo     rd
+
+           glo     rd                  ; save descriptor address
+           adi     18                  ; point to current sector lsb
+           plo     re
            ghi     rd
-           stxd
            adci    0                   ; propagate carry
-           phi     rd
-           lda     rd                  ; get byte from descriptor
-           str     r2                  ; place onto stack
-           ghi     r8                  ; high,high of sector
-           sm                          ; compare against descriptor
-           lbnz     secnot             ; jump if no match
-           lda     rd                  ; get next byte
-           str     r2
-           glo     r8                  ; high,low of sector
+           phi     re
+
+           sex     re                  ; lsb-to-msb to fail soonest
+           glo     r7
            sm
-           bnz     secnot
-           lda     rd                  ; get next byte
-           str     r2
-           ghi     r7                  ; low,high of sector
+           lbnz    secnot
+
+           dec     re
+           ghi     r7
            sm
-           bnz     secnot
-           lda     rd                  ; last byte from descriptor
-           str     r2
-           glo     r7                  ; low,low of sector
+           lbnz    secnot
+
+           dec     re
+           glo     r8
            sm
-           bnz     secnot
-           ldi     1                   ; need to set df, sector is loaded
-seccont:   shr                         ; shift result into df
-           irx                         ; recover descriptor
-           ldxa
-           phi     rd
-           ldx
-           plo     rd
+           lbnz    secnot
+
+           dec     re
+           ghi     r8
+           sm
+           lbz     secyes
+
+secnot:    ldi     0                   ; return df=0
+           lskp
+
+secyes:    ldi     1                   ; return df=1
+           shr
+
+           inc     r2
+           ldn     r2
+           phi     re
+
            sep     sret                ; return to caller
-secnot:    ldi     0                   ; need to reset df, sector not loaded
-           br      seccont             ; continue
+
 
 ; *****************************************
 ; *** See if sector needs to be written ***
