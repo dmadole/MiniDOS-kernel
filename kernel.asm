@@ -431,16 +431,20 @@ lmpsecofs: glo     ra                  ; get low byte of lump
            ldi     0
            shlc                        ; propagate carry
            phi     r9                  ; R9 now has lat offset
+
            ghi     ra                  ; get high byte of lump
-           adi     17                  ; add in base of lat table
+           adi     low 17              ; add in base of lat table
            plo     r7                  ; place into r7
            ldi     0
-           adci    0                   ; propagate the carry
+           adci    high 17             ; propagate the carry
            phi     r7
+
            ldi     0                   ; need to zero R8
            phi     r8
            plo     r8
+
            sep     sret                ; return to caller
+
 
 ; ************************************************
 ; *** Determine if sector is already in buffer ***
@@ -711,8 +715,8 @@ readsys:   glo     rd
 ; *** RD - file descriptor       ***
 ; *** Returns: RA - lump         ***
 ; **********************************
-startlump:
-           glo     r7                  ; save consumed registers
+
+startlump: glo     r7                  ; save consumed registers
            stxd
            ghi     r7
            stxd
@@ -720,14 +724,14 @@ startlump:
            stxd
            ghi     r8
            stxd
+
            glo     rd                  ; point to dirSector
            adi     9
-           stxd                        ; and save on stack
            plo     rd
            ghi     rd
            adci    0
-           stxd
            phi     rd
+
            lda     rd                  ; retrieve dir sector
            phi     r8
            lda     rd
@@ -736,39 +740,31 @@ startlump:
            phi     r7
            lda     rd
            plo     r7
-           ldi     high sysfildes      ; get system file descriptor
-           phi     rd
-           ldi     low sysfildes
-           plo     rd
+
            sep     scall               ; read the directory sector
-           dw      rawread
-           irx                         ; recover descriptor
-           ldxa
-           phi     rd
-           ldx
-           plo     rd
-           inc     rd                  ; point to end of offset
-           inc     rd
-           inc     rd
-           inc     rd
-           inc     rd
-           ldi     low dta             ; get system dta
-           str     r2                  ; add in offset
+           dw      readsys
+
+           inc     rd                  ; pointer to starting lump
            ldn     rd
+           adi     low (dta+2)
+           plo     r7
            dec     rd
-           add
-           plo     r7                  ; use r7 as pointer
-           ldi     high dta
-           str     r2
            ldn     rd
-           adc
+           adci    high (dta+2)
            phi     r7
-           inc     r7                  ; move to starting lump
-           inc     r7
+
            lda     r7                  ; get starting lump
            phi     ra
            ldn     r7
            plo     ra
+
+           glo     rd                  ; restore rd to beginning
+           smi     13
+           plo     rd
+           ghi     rd
+           smbi    0
+           phi     rd
+
            irx                         ; recover consumed registers
            ldxa
            phi     r8
@@ -778,24 +774,21 @@ startlump:
            phi     r7
            ldx
            plo     r7
-           glo     rd                  ; restore rd to beginning
-           smi     13
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
+
            sep     sret                ; and return to caller
+
 
 ; **************************
 ; *** Write value to lat ***
 ; *** RA - lump          ***
 ; *** RF - value         ***
 ; **************************
+
 writelump: glo     ra                  ; do not allow write of lump 0
            lbnz    writelmp
            ghi     ra
-           lbnz    writelmp
-           sep     sret
+           lbz     return
+
 writelmp:  glo     r7                  ; save consumed registers
            stxd
            ghi     r7
@@ -812,40 +805,35 @@ writelmp:  glo     r7                  ; save consumed registers
            stxd
            ghi     rd
            stxd
-           glo     ra
-           stxd
-           ghi     ra
-           stxd
-           sep     scall               ; convert lump to sector:offset
-           dw      lmpsecofs
+
            ldi     high sysfildes      ; get system dta
            phi     rd
            ldi     low sysfildes
            plo     rd
+
+           sep     scall               ; convert lump to sector:offset
+           dw      lmpsecofs
+
            sep     scall               ; read the sector
            dw      rawread
-           ldi     low dta             ; get dta
-           str     r2                  ; add in offset
-           glo     r9
-           add
-           plo     ra                  ; place into pointer
-           ldi     high dta
-           str     r2
+
+           glo     r9                  ; add offset to dta
+           adi     low dta
+           plo     r9
            ghi     r9
-           adc
-           phi     ra
+           adci    high dta
+           phi     r9
+
            ghi     rf                  ; write value
-           str     ra
-           inc     ra
+           str     r9
+           inc     r9
            glo     rf
-           str     ra
+           str     r9
+
            sep     scall
            dw      rawwrite            ; write sector back to disk
+
            irx                         ; recover consumed registers
-           ldxa
-           phi     ra
-           ldxa
-           plo     ra
            ldxa
            phi     rd
            ldxa
@@ -862,7 +850,9 @@ writelmp:  glo     r7                  ; save consumed registers
            phi     r7
            ldx
            plo     r7
+
            sep     sret                ; return to caller
+
 
 ; ******************************
 ; *** Get next lump in chain ***
