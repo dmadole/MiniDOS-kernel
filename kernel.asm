@@ -404,21 +404,6 @@ sectolmp1: glo     r7                  ; perform shift
 
            sep     sret                ; return to caller
 
-; *******************************************
-; *** Convert latSector,latOffset to lump ***
-; *** R8:R7 - lat Sector                  ***
-; ***    R9 - lat Offset                  ***
-; *** Returns: RA - lump                  ***
-; *******************************************
-secofslmp: glo     r7                  ; subtract 17 from sector number
-           smi     17
-           phi     ra                  ; place into ra (* 256)
-           ghi     r9                  ; offset divided by 2
-           shr
-           glo     r9
-           shrc
-           plo     ra
-           sep     sret                ; return to caller
 
 ; ********************************************
 ; *** Convert lump to latSector, latOffset ***
@@ -466,7 +451,7 @@ secloaded: glo     rd                  ; save descriptor address
            str     r2                  ; place onto stack
            ghi     r8                  ; high,high of sector
            sm                          ; compare against descriptor
-           bnz     secnot              ; jump if no match
+           lbnz     secnot             ; jump if no match
            lda     rd                  ; get next byte
            str     r2
            glo     r8                  ; high,low of sector
@@ -1744,8 +1729,16 @@ freelump3: lda     r9                  ; get value from table
            ghi     r9                  ; subtract out buffer address
            smi     1
            phi     r9
-           sep     scall               ; convert sector,offset to lump
-           dw      secofslmp
+
+           glo     r7                  ; subtract 17 from sector number
+           smi     17
+           phi     ra                  ; place into ra (* 256)
+           ghi     r9                  ; offset divided by 2
+           shr
+           glo     r9
+           shrc
+           plo     ra
+
            ldi     0                   ; signal a lump was found
            lbr     freelumpe           ; and return
 freelump4:
