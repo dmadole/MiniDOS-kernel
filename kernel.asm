@@ -488,82 +488,6 @@ seccont:   shr                         ; shift result into df
 secnot:    ldi     0                   ; need to reset df, sector not loaded
            br      seccont             ; continue
 
-; ***************************************
-; *** Write raw sector                ***
-; *** R8:R7 - Sector address to write ***
-; ***    RD - File descriptor         ***
-; ***************************************
-rawwrite:
-           ghi     r8                  ; check for valid sector
-           smi     0ffh
-           lbnz    rawwrite1
-           glo     r8
-           smi     0ffh
-           lbnz    rawwrite1
-           ghi     r7
-           smi     0ffh
-           lbnz    rawwrite1
-           glo     r7
-           smi     0ffh
-           lbnz    rawwrite1
-           sep     sret                ; sector not valid, return
-rawwrite1: glo     rf                  ; save consumed register
-           stxd
-           ghi     rf
-           stxd
-           glo     rd                  ; save consumed register
-           stxd
-           adi     4                   ; also point to dta
-           plo     rd
-           ghi     rd
-           stxd
-           adci    0
-           phi     rd
-           lda     rd                  ; get dta
-           phi     rf                  ; and place into rf
-           lda     rd
-           plo     rf
-           ghi     r8                  ; save r8
-           stxd
-           ori     0e0h                ; force lba mode
-           phi     r8
-           sep     scall               ; call bios to write sector
-           dw      d_idewrite
-           irx                         ; recover high r8
-           ldxa
-           phi     r8
-           inc     rd                  ; point to flags byte
-           inc     rd
-           ldn     rd                  ; get flags
-           ani     0feh                ; clear written flag
-           str     rd                  ; and put back
-           glo     rd                  ; move to current sector
-           adi     7
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
-           ghi     r8                  ; write current sector into descriptor
-           str     rd
-           inc     rd
-           glo     r8
-           str     rd
-           inc     rd
-           ghi     r7
-           str     rd
-           inc     rd
-           glo     r7
-           str     rd
-           ldxa                        ; recover consumed registers
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rf
-           ldx
-           plo     rf
-           sep     sret                ; return to caller
-
 ; *****************************************
 ; *** See if sector needs to be written ***
 ; *** RD - file descriptor              ***
@@ -630,6 +554,28 @@ checkwrt1: glo     r7                  ; save consumed registers
            plo     r7
            sep     sret                ; return to caller
 
+
+; ***************************************
+; *** Write raw sector                ***
+; *** R8:R7 - Sector address to write ***
+; ***    RD - File descriptor         ***
+; ***************************************
+
+rawwrite:  ghi     r8                  ; if msb is zero then its valid
+           lbz     rawwrite1
+
+           inc     r8                  ; if incrementing makes msb become
+           ghi     r8                  ;  zero then it was not valid
+           dec     r8
+           lbz     return
+
+rawwrite1: ldi     1
+           plo     re
+
+           lbr     dorawio
+
+
+
 ; ***************************************
 ; *** Read raw sector                 ***
 ; *** R8:R7 - Sector address to write ***
@@ -637,67 +583,85 @@ checkwrt1: glo     r7                  ; save consumed registers
 ; ***************************************
 rawread:   sep     scall               ; see if requested sector is already in
            dw      secloaded
-           lbnf    rawread1            ; jump if not
-           sep     sret                ; otherwise return to caller
-rawread1:  sep     scall               ; see if loaded sector needs writing
+           lbdf    return              ; jump if not
+
+           sep     scall               ; see if loaded sector needs writing
            dw      checkwrt
-           glo     rf                  ; save consumed register
+
+           ldi     0
+           plo     re
+
+dorawio:   glo     rf                  ; save consumed register
            stxd
            ghi     rf
            stxd
-           glo     rd                  ; save consumed register
-           stxd
-           adi     4                   ; also point to dta
-           plo     rd
-           ghi     rd
-           stxd
-           adci    0
-           phi     rd
+
+           inc     rd                   ; also point to dta
+           inc     rd
+           inc     rd
+           inc     rd
+
            lda     rd                  ; get dta
            phi     rf                  ; and place into rf
            lda     rd
            plo     rf
-           ghi     r8                  ; save r8
-           stxd
-           ori     0e0h                ; force lba mode
-           phi     r8
-           sep     scall               ; call bios to read sector
-           dw      d_ideread
-           irx                         ; recover high r8
-           ldx
-           phi     r8
+
            inc     rd                  ; point to flags byte
            inc     rd
+
            ldn     rd                  ; get flags
            ani     0feh                ; clear written flag
            str     rd                  ; and put back
+
            glo     rd                  ; move to current sector
-           adi     7
+           adi     10
            plo     rd
            ghi     rd
            adci    0
            phi     rd
-           ghi     r8                  ; write current sector into descriptor
-           str     rd
-           inc     rd
-           glo     r8
-           str     rd
-           inc     rd
+
+           sex     rd
+
+           glo     r7                  ; write current sector into descriptor
+           stxd
            ghi     r7
+           stxd
+           glo     r8
+           stxd
+           ghi     r8
            str     rd
-           inc     rd
-           glo     r7
-           str     rd
+
+           ori     0e0h                ; force lba mode
+           phi     r8
+
+           glo     re
+           lbnz    doidewrt
+
+           sep     scall               ; call bios to read sector
+           dw      d_ideread
+           lbr     rawiorst
+
+doidewrt:  sep     scall               ; call bios to read sector
+           dw      d_idewrite
+
+rawiorst:  ldn     rd                  ; recover high r8
+           phi     r8
+
+           glo     rd                  ; move to current sector
+           smi     15
+           plo     rd
+           ghi     rd
+           smbi    0
+           phi     rd
+
            irx
            ldxa                        ; recover consumed registers
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
            phi     rf
            ldx
            plo     rf
+
            sep     sret                ; return to caller
+
 
 ; *************************************
 ; *** write sector using sysfildes  ***
@@ -5291,8 +5255,7 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:   db      'Starting Elf/OS Classic...',10,13
-           db      'Version 4.2.0',10,13
+bootmsg:   db      'Elf/OS Classic 4.2.0',10,13
            db      'Copyright 2004-2021 by Michael H Riley',10,13,0
 prompt:    db      10,13,'Ready',10,13,': ',0
 crlf:      db      10,13,0
