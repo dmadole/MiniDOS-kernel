@@ -339,40 +339,36 @@ setfddrof: glo     rd                  ; move descriptor to flags
 ; *** R8:R7 - Sector         ***
 ; *** Returns: RA - Lump     ***
 ; ******************************
-sectolump: glo     rb                  ; save consumed registers
+
+sectolump: glo     r8                  ; save consumed registers
            stxd
-           ghi     rb
-           stxd
-           ldi     LMPSHIFT            ; retrieve shift count
-           plo     re                  ; and set into shift counter
-           glo     r8                  ; move sector to lump
-           plo     rb
-           ghi     r8
-           phi     rb
+
            ghi     r7
            phi     ra
            glo     r7
            plo     ra
-lmptosec1: ghi     rb                  ; perform shift
+
+           ldi     LMPSHIFT            ; retrieve shift count
+           plo     re                  ; and set into shift counter
+
+lmptosec1: glo     r8
            shr
-           phi     rb
-           glo     rb
-           shrc
-           plo     rb
+           plo     r8
            ghi     ra
            shrc
            phi     ra
            glo     ra
            shrc
            plo     ra
+
            dec     re                  ; decrement shift count
            glo     re                  ; see if at end
            lbnz    lmptosec1           ; loop back if more shifts needed
+
            irx                         ; recover consumed registers
-           ldxa
-           phi     rb
            ldx
-           plo     rb
+           plo     r8
+
            sep     sret                ; return to caller
 
 ; *******************************
@@ -380,15 +376,19 @@ lmptosec1: ghi     rb                  ; perform shift
 ; *** RA - lump               ***
 ; *** Returns: R8:R7 - Sector ***
 ; *******************************
-lumptosec: ldi     LMPSHIFT            ; get shift count
-           plo     re                  ; and put into shift counter
-           glo     ra                  ; transfer lump to sector
+
+lumptosec: glo     ra                  ; transfer lump to sector
            plo     r7
            ghi     ra
            phi     r7
+
            ldi     0                   ; zero high word
            phi     r8
            plo     r8
+
+           ldi     LMPSHIFT            ; get shift count
+           plo     re                  ; and put into shift counter
+
 sectolmp1: glo     r7                  ; perform shift
            shl
            plo     r7
@@ -401,6 +401,7 @@ sectolmp1: glo     r7                  ; perform shift
            dec     re                  ; decrement shift count
            glo     re                  ; check for completion
            lbnz    sectolmp1           ; loop back if more shifts needed
+
            sep     sret                ; return to caller
 
 ; *******************************************
