@@ -4635,86 +4635,87 @@ finalgd:   irx                         ; recover filename position
 ; *** Returns: RA - date in packed format ***
 ; ***          RB - time in packes format ***
 ; *******************************************
+
 gettmdt:   glo     rf                  ; save consumed register
            stxd
            ghi     rf
            stxd
+
            sep     scall               ; get devices
            dw      o_getdev
+
            glo     rf
            ani     010h                ; see if RTC is installed
            lbz     no_rtc              ; jump if no rtc
+
            ldi     high scratch        ; point to scratch area
            phi     rf
            ldi     low scratch
            plo     rf
+
            sep     scall               ; get time and date
            dw      o_gettod
            lbdf    no_rtc              ; jump if rtc is unreadable
+
            ldi     high scratch        ; point to scratch area
            phi     rf
            ldi     low scratch
            plo     rf
-rtc_cont:  inc     rf                  ; point to year
-           inc     rf
-           ldn     rf                  ; retrieve year
-           phi     ra                  ; place into output
-           dec     rf                  ; point to month
-           dec     rf
-           lda     rf                  ; retrieve it
-           ani     0fh                 ; keep only bottom 3 bits
-           shl                         ; shift into correct position
+
+rtc_cont:  lda     rf                  ; get month, shift left 5 bits,
+           shl                         ;  hold result on stack
            shl
            shl
            shl
            shl
-           plo     ra                  ; place into output 
-           ghi     ra                  ; get high byte 
-           shlc                        ; shift in high bit of month
-           phi     ra                  ; ra now has year and high bit of month
-           lda     rf                  ; retrieve day
-           ani     01fh                ; mask off unnneded bits
-           str     r2                  ; prepare to combine
-           glo     ra                  ; get month
-           or                          ; combine with day
-           plo     ra                  ; now ra has full date
-           inc     rf                  ; point to hours
-           lda     rf                  ; and retrieve
-           ani     01fh                ; mask it
-           shl                         ; and shift into position 
+           str     r2
+
+           lda     rf                  ; get day, or with shifted month,
+           or                          ;  save to result
+           plo     ra
+
+           lda     rf                  ; get year, shift in high bit of
+           shlc                        ;  month, save to result
+           phi     ra
+
+           lda     rf                  ; get hours, shift left 3 bits,
+           shl                         ;  hold result on stack
            shl
            shl
-           str     r2                  ; set aside
-           ldn     rf                  ; get minutes
-           shr                         ; get high 3 bits
+           str    r2
+
+           ldn    rf                   ; get minutes, shift right 3 bits,
+           shr                         ;  or with hours, save to result
            shr
            shr
-           or                          ; and combine with hours
-           phi     rb                  ; place into answer
-           lda     rf                  ; retrieve minutes
-           shl                         ; shift into position
+           or
+           phi    rb
+
+           lda    rf                   ; get minutes again, shift right 5,
+           shl                         ;  or with seconds, save to result
            shl
-           shl 
            shl
            shl
-           str     r2                  ; prepare for combination
-           ldn     rf                  ; get seconds
-           shr                         ; divide by 2
-           ani     01fh                ; mask it
-           or                          ; combine with bottom half of minutes
-           plo     rb                  ; place into answer
-gettm_dn:  irx                         ; recover consumed register
-           ldxa
+           shl
+           sex    rf
+           or
+           plo     rb
+
+gettm_dn:  inc     r2                  ; recover consumed register
+           lda     r2
            phi     rf
-           ldx
+           ldn     r2
            plo     rf
+
            sep     sret                ; and return
 
 no_rtc:    ldi     high date_time      ; point to stored date/time
            phi     rf
            ldi     low date_time
            plo     rf
+
            lbr     rtc_cont            ; continue
+
 
 
 ; *******************************************
