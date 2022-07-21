@@ -1540,18 +1540,14 @@ seeknot2:  dec     rd                  ; restore descriptor
 ; *** Open master directory         ***
 ; *** Returns: RD - file descriptor ***
 ; *************************************
-openmd:
-           glo     r7                  ; save consumed registers
+
+openmd:    glo     r7                  ; save consumed registers
            stxd
            ghi     r7
            stxd
            glo     r8
            stxd
            ghi     r8
-           stxd
-           glo     rf
-           stxd
-           ghi     rf
            stxd
 
            ldi     0                   ; need to read sector 0
@@ -1563,91 +1559,73 @@ openmd:
            sep     scall               ; read system sector
            dw      readsys
 
-           ldi     high mdfildes       ; point to mdfildes
+           ldi     high (mdfildes+18)  ; end of mdfildes, fill downwards
            phi     rd
-           ldi     low mdfildes
+           ldi     low (mdfildes+18)
            plo     rd
 
-           ldi     low dta             ; point to eof of master dir
-           adi     48                  ; add 304, address of md sector
-           plo     rf
-           ldi     high dta
-           adci    1
-           phi     rf
-           ldi     0                   ; set current offset to zero
-           str     rd
-           inc     rd
-           str     rd
-           inc     rd
-           str     rd
-           inc     rd
-           str     rd
-           inc     rd
-           ldi     high mddta          ; next dta
-           str     rd
-           inc     rd
-           ldi     low mddta
-           str     rd
-           inc     rd
-           lda     rf                  ; next eof
-           str     rd
-           inc     rd
-           lda     rf
-           str     rd
-           inc     rd
+           sex     rd
+
+           ldi     -1                  ; no currently loaded sector
+           stxd
+           stxd
+           stxd
+           stxd
+
+           ldi     low 12ch            ; dir offset in system data sector
+           stxd
+           ldi     high 12ch
+           stxd
+
+           ldi     0                   ; address of system data sector
+           stxd
+           stxd
+           stxd
+           stxd
+
            ldi     0ch                 ; next flags
+           stxd
+
+           ldi     high (dta+12ch+5)   ; pointer to lsb of master dir eof
+           phi     r8
+           ldi     low (dta+12ch+5)
+           plo     r8
+
+           ldn     r8                  ; next eof
+           stxd
+           dec     r8
+           ldn     r8
+           stxd
+
+           ldi     low mddta
+           stxd
+           ldi     high mddta          ; next dta
+           stxd
+
+           ldi     0                   ; set current offset to zero
+           stxd
+           stxd
+           stxd
            str     rd
-           inc     rd
-           ldi     4                   ; 6 bytes to copy
-           plo     re
-openmdlp1: ldi     0                   ; need to set 0
-           str     rd
-           inc     rd
-           dec     re                  ; decrement count
-           glo     re
-           lbnz    openmdlp1           ; loop until done
-           ldi     1                   ; dir offset is 300
-           str     rd
-           inc     rd
-           ldi     44
-           str     rd
-           inc     rd
-           ldi     4                   ; 4 bytes to copy
-           plo     re
-openmdlp2: ldi     0ffh                ; need to set -1
-           str     rd
-           inc     rd
-           dec     re                  ; decrement count
-           glo     re
-           lbnz    openmdlp2           ; loop until done
-           glo     rd                  ; move desriptor back to beginning
-           smi     19
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
-           ldi     0
+
+           ldi     low (dta+105h)      ; get address of md sector
+           plo     r8
+           ldi     high (dta+105h)
+           phi     r8
+
+           lda     r8                  ; get starting sector
+           phi     r7
+           lda     r8
+           plo     r7
+
+           ldi     0                   ; set current offset to zero
            phi     r8
            plo     r8
-           ldi     low mdfildes
-           plo     rd
-           ldi     low dta             ; point to sector
-           adi     5                   ; add 261, address of md sector
-           plo     rf
-           ldi     high dta
-           adci    1
-           phi     rf
-           lda     rf                  ; get starting sector
-           phi     r7
-           lda     rf
-           plo     r7
+
            sep     scall               ; read first sector
            dw      rawread
+
            irx                         ; recover used registers
-           ldxa
-           phi     rf
-           ldxa
-           plo     rf
            ldxa
            phi     r8
            ldxa
@@ -1656,7 +1634,9 @@ openmdlp2: ldi     0ffh                ; need to set -1
            phi     r7
            ldx
            plo     r7
+
            sep     sret                ; return to caller
+
 
 ; **************************************
 ; *** Get a free lump                ***
