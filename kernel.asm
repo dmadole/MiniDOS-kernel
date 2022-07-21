@@ -705,36 +705,6 @@ readsys:   glo     rd
            plo     rd
            sep     sret                ; return to caller
 
-; *************************************
-; *** Load sector 0                 ***
-; *************************************
-sector0:
-           glo     r7                  ; save consumed registers
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           stxd
-           ldi     0                   ; need to read sector 0
-           phi     r8
-           plo     r8
-           phi     r7
-           plo     r7
-           sep     scall               ; read system sector
-           dw      readsys
-           irx                         ; restore consumed registers
-           ldxa
-           phi     r8
-           ldxa
-           plo     r8
-           ldxa
-           phi     r7
-           ldx
-           plo     r7
-           sep     sret                ; return to caller
-
 
 ; **********************************
 ; *** Get starting lump for file ***
@@ -1583,12 +1553,21 @@ openmd:
            stxd
            ghi     rf
            stxd
-           sep     scall               ; read sector 0
-           dw      sector0
+
+           ldi     0                   ; need to read sector 0
+           phi     r8
+           plo     r8
+           phi     r7
+           plo     r7
+
+           sep     scall               ; read system sector
+           dw      readsys
+
            ldi     high mdfildes       ; point to mdfildes
            phi     rd
            ldi     low mdfildes
            plo     rd
+
            ldi     low dta             ; point to eof of master dir
            adi     48                  ; add 304, address of md sector
            plo     rf
@@ -1713,30 +1692,38 @@ freelump:  glo     r7                  ; save consumed registers
            stxd
            ghi     rf
            stxd
-           sep     scall               ; read sector 0
-           dw      sector0
-           ldi     low dta             ; point to sector
-           adi     5                   ; add 261, address of md sector
-           plo     rf
-           ldi     high dta
-           adci    1
-           phi     rf
-           lda     rf                  ; get sector value
-           phi     rb
-           lda     rf
-           plo     rb
+
+           ldi     high sysfildes      ; get system file descriptor
+           phi     rd
+           ldi     low sysfildes
+           plo     rd
+
            ldi     0                   ; zero high word
            phi     ra
            plo     ra
            phi     r8                  ; set search sector
            plo     r8
            phi     r7
+           plo     r7
+
+           sep     scall               ; read sector 0
+           dw      rawread
+
            ldi     17
            plo     r7
-           ldi     high sysfildes      ; get system file descriptor
-           phi     rd
-           ldi     low sysfildes
-           plo     rd
+
+           ldi     low dta             ; point to sector
+           adi     low 261             ; add 261, address of md sector
+           plo     rf
+           ldi     high dta
+           adci    high 261
+           phi     rf
+
+           lda     rf                  ; get sector value
+           phi     rb
+           lda     rf
+           plo     rb
+
 freelump1: glo     rb                  ; check if end of lat table
            str     r2
            glo     r7
