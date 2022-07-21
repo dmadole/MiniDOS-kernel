@@ -833,7 +833,7 @@ writelmp:  glo     r7                  ; save consumed registers
            sep     scall
            dw      rawwrite            ; write sector back to disk
 
-           irx                         ; recover consumed registers
+popr789d:  irx                         ; recover consumed registers
            ldxa
            phi     rd
            ldxa
@@ -859,6 +859,7 @@ writelmp:  glo     r7                  ; save consumed registers
 ; *** RA - lump              ***
 ; *** Returns: RA - lump     ***
 ; ******************************
+
 readlump:  glo     r7                  ; save consumed registers
            stxd
            ghi     r7
@@ -875,54 +876,32 @@ readlump:  glo     r7                  ; save consumed registers
            stxd
            ghi     rd
            stxd
-           glo     rf
-           stxd
-           ghi     rf
-           stxd
-           sep     scall               ; convert lump to sector:offset
-           dw      lmpsecofs
+
            ldi     high sysfildes      ; get system dta
            phi     rd
            ldi     low sysfildes
            plo     rd
+
+           sep     scall               ; convert lump to sector:offset
+           dw      lmpsecofs
+
            sep     scall               ; read the sector
            dw      rawread
-           ldi     low dta             ; get dta
-           str     r2                  ; add in offset
+
            glo     r9
-           add
-           plo     rf                  ; place into pointer
-           ldi     high dta
-           str     r2
-           ghi     r9
-           adc
-           phi     rf
-           lda     rf                  ; get value
-           phi     ra
-           ldn     rf
-           plo     ra
-           irx                         ; recover consumed registers
-           ldxa
-           phi     rf
-           ldxa
-           plo     rf
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     r9
-           ldxa
+           adi     low dta
            plo     r9
-           ldxa
-           phi     r8
-           ldxa
-           plo     r8
-           ldxa
-           phi     r7
-           ldx
-           plo     r7
-           sep     sret                ; return to caller
+           ghi     r9
+           adci    high dta
+           phi     r9
+
+           lda     r9                  ; get value
+           phi     ra
+           ldn     r9
+           plo     ra
+
+           lbr     popr789d
+
 
 ; ***************************
 ; *** Delete a lump chain ***
