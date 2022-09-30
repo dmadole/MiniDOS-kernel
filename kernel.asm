@@ -3522,6 +3522,7 @@ execfail:  ldi     1                   ; signal error
 open:      sep     scall               ; validate filename
            dw      validate
            lbdf    noopen              ; failed
+
            push    r7                  ; save consumed registers
            push    r8
            push    r9
@@ -3529,50 +3530,77 @@ open:      sep     scall               ; validate filename
            push    rb
            push    rc
            push    rd
+
            glo     r7                  ; get copy of flags
            stxd                        ; and save
+
            sep     scall               ; find directory
            dw      finddir
-           ldi     high scratch        ; setup scrath area
+
+           ldi     high scratch        ; setup scratch area
            phi     rf
            ldi     low scratch
            plo     rf
+
            sep     scall               ; perform directory search
            dw      searchdir
            lbdf    newfile             ; jump if file needs creation
-           irx                         ; remove flags from stack
+
+           ldi     high (scratch+6)    ; get pointer to dirent flags
+           phi     ra
+           ldi     low (scratch+6)
+           plo     ra
+
+           ldn     ra                  ; check flags if a directory
+           ani     1
+           lbz     notdir
+
+           irx                         ; discard flags and return error
+           lbr     openerr
+
+notdir:    irx                         ; remove flags from stack
            ldx                         ; get flags
-           dec     r2                  ; and keep on stack
+           stxd                        ; and keep on stack
+
            ani     2                   ; see if need to truncate file
            lbz     opencnt             ; jump if not
+
            glo     rf                  ; save buffer position
            stxd
            ghi     rf
            stxd
+
            inc     rf                  ; point to starting lump
            inc     rf
+
            lda     rf                  ; get starting lump
            phi     ra
            lda     rf
            plo     ra
+
            ldi     0                   ; need to zero eof
            str     rf
            inc     rf
            str     rf
+
            sep     scall               ; delete the files chain
            dw      delchain
+
            ldi     0feh                ; signal end of chain
            phi     rf
            plo     rf
            sep     scall               ; write lump value
            dw      writelump
+
            irx                         ; recover buffer position
            ldxa
            phi     rf
            ldx
            plo     rf
+
 opencnt:   sep     scall               ; close the directory
            dw      close
+
            irx                         ; recover flags
            ldxa
            plo     re
@@ -3580,6 +3608,7 @@ opencnt:   sep     scall               ; close the directory
            phi     rd
            ldx
            plo     rd
+
            glo     re                  ; save flags
            stxd
 
@@ -3588,14 +3617,19 @@ opencnt:   sep     scall               ; close the directory
 
            irx                         ; recover flags
            ldx
+
            ani     4                   ; see if append mode
            lbz     opendone            ; jump if not
+
            sep     scall               ; seek to end
            dw      seekend
+
            sep     scall               ; load correct sector
            dw      loadsec
+
 opendone:  ldi     0                   ; signal success
            shr
+
 openexit:  irx                         ; recover consumed registers
            ldxa
            phi     rc
@@ -3622,34 +3656,46 @@ openexit:  irx                         ; recover consumed registers
            ldx
            plo     r7
            sep     sret                ; return to caller
+
 newfile:   irx                         ; recover flags
            ldx
            plo     re                  ; keep a copy
+
            ani     1                   ; see if create is allowed
            lbnz    allow               ; allow the create
-           ldi     1                   ; need to signal an error
+
+openerr:   ldi     1                   ; need to signal an error
            shr
+
            irx                         ; recover descriptor
            ldxa
            phi     rd
            ldx
            plo     rd
+
            lbr     openexit
+
 allow:     ldi     0                   ; no file flags
            plo     r7
            glo     re
+
            ani     8                   ; see if executable file needs to be set
            lbz     allow2              ; jump if not
+
            ldi     2                   ; set flags for executable file
            plo     r7
+
 allow2:    glo     rc                  ; save filename address
            stxd
            ghi     rc
            stxd
+
            glo     r7                  ; save flags
            stxd
+
            sep     scall               ; find a free dir entry
            dw      freedir
+
            irx                         ; recover flags
            ldxa
            plo     r7
@@ -3661,11 +3707,14 @@ allow2:    glo     rc                  ; save filename address
            phi     rc
            ldx
            plo     rc
+
            sep     scall               ; create the file
            dw      create
+
            ldi     0                   ; signal success
            shr
            lbr     openexit            ; and return
+
 noopen:    smi     0                   ; signal file not opened
            sep     sret                ; and return
 
