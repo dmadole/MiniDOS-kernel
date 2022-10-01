@@ -3199,6 +3199,7 @@ opendir:   glo     rc                  ; save consumed register
 ; ***      1-subdir              ***
 ; ***      2-executable          ***
 ; *** Returns: RD - new file     ***
+; ***          RF - set if fail  ***
 ; **********************************
 create:    glo     ra                  ; save consumed registers
            stxd
@@ -3261,12 +3262,14 @@ create1:   ldi     0
            glo     re
            lbnz    create1
 
-create2:   lda     rf                  ; get character from filename
-           str     r9                  ; store into buffer
-           inc     r9
-           lbnz    create2             ; loop back until zero is found
+           sep     scall
+           dw      copyname
+           lbdf    createok
 
-           sep     scall               ; get dir sector and offset
+           smi     0
+           lbr     creatert
+
+createok:  sep     scall               ; get dir sector and offset
            dw      getsecofs
 
            ldi     high scratch        ; get buffer address
@@ -3345,7 +3348,9 @@ create2:   lda     rf                  ; get character from filename
            sep     scall               ; read the sector
            dw      rawread
 
-           irx                         ; recover consumed registers
+           adi     0
+
+creatert:  irx                         ; recover consumed registers
            ldxa
            phi     r7
            ldxa
@@ -3534,11 +3539,7 @@ execfail:  ldi     1                   ; signal error
 ; ***          DF=1 - error         ***
 ; ***             D - Error code    ***
 ; *************************************
-open:      sep     scall               ; validate filename
-           dw      validate
-           lbdf    noopen              ; failed
-
-           push    r7                  ; save consumed registers
+open:      push    r7                  ; save consumed registers
            push    r8
            push    r9
            push    ra
@@ -3726,9 +3727,8 @@ allow2:    glo     rc                  ; save filename address
            sep     scall               ; create the file
            dw      create
 
-           ldi     0                   ; signal success
-           shr
-           lbr     openexit            ; and return
+           ldi     0                   ; clear d and return
+           lbr     openexit
 
 noopen:    smi     0                   ; signal file not opened
            sep     sret                ; and return
@@ -4168,11 +4168,20 @@ mkdir1:    sep     scall               ; open directory
            plo     rc
            ldi     1                   ; create as directory
            plo     r7
+
            sep     scall               ; create it
            dw      create
-           sep     scall               ; close the new dir
+           lbnf    mkdirok
+
+           smi     0
+           lbr     mkdirrt
+
+mkdirok:   sep     scall               ; close the new dir
            dw      close
-           irx                         ; recover consumed registers
+
+           adi     0
+
+mkdirrt:   irx                         ; recover consumed registers
            ldxa
            plo     r7
            ldxa
@@ -4183,8 +4192,8 @@ mkdir1:    sep     scall               ; open directory
            phi     rf
            ldx
            plo     rf
+
            ldi     0                   ; signal success
-           shr
            sep     sret                ; and return to caller
 
 ; ***************************************
