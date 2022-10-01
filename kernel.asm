@@ -3204,10 +3204,6 @@ create:    glo     ra                  ; save consumed registers
            stxd
            ghi     ra
            stxd
-           glo     rb
-           stxd
-           ghi     rb
-           stxd
            glo     r9
            stxd
            ghi     r9
@@ -3224,50 +3220,50 @@ create:    glo     ra                  ; save consumed registers
            stxd
 
            ldi     high scratch        ; get buffer address
-           phi     rb
+           phi     r9
            ldi     low scratch
-           plo     rb
+           plo     r9
 
            sep     scall               ; get a lump
            dw      freelump
 
            ldi     0                   ; setup starting lump
-           str     rb
-           inc     rb
-           str     rb
-           inc     rb
+           str     r9
+           inc     r9
+           str     r9
+           inc     r9
 
            ghi     ra
-           str     rb
-           inc     rb
+           str     r9
+           inc     r9
            glo     ra
-           str     rb
-           inc     rb
+           str     r9
+           inc     r9
 
            ldi     0                   ; set eof at zero
-           str     rb
-           inc     rb
-           str     rb
-           inc     rb
+           str     r9
+           inc     r9
+           str     r9
+           inc     r9
 
            irx                         ; recover create flags
            ldx
-           str     rb                  ; and save
-           inc     rb
+           str     r9                  ; and save
+           inc     r9
 
            ldi     5                   ; need 5 zeroes
            plo     re
 
 create1:   ldi     0
-           str     rb
-           inc     rb
+           str     r9
+           inc     r9
            dec     re
            glo     re
            lbnz    create1
 
 create2:   lda     rf                  ; get character from filename
-           str     rb                  ; store into buffer
-           inc     rb
+           str     r9                  ; store into buffer
+           inc     r9
            lbnz    create2             ; loop back until zero is found
 
            sep     scall               ; get dir sector and offset
@@ -3362,10 +3358,6 @@ create2:   lda     rf                  ; get character from filename
            phi     r9
            ldxa
            plo     r9
-           ldxa
-           phi     rb
-           ldxa
-           plo     rb
            ldxa
            phi     ra
            ldx
