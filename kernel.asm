@@ -103,7 +103,7 @@ iserve:    dec     r2
 ivec:      dw      intret
 
            org     400h
-version:   db      4,2,0
+version:   db      4,2,1
 
 build:     dw      [build]
 
@@ -3222,112 +3222,133 @@ create:    glo     ra                  ; save consumed registers
            stxd
            glo     r7                  ; put copy of flags on stack
            stxd
+
            ldi     high scratch        ; get buffer address
            phi     rb
            ldi     low scratch
            plo     rb
+
            sep     scall               ; get a lump
            dw      freelump
+
            ldi     0                   ; setup starting lump
            str     rb
            inc     rb
            str     rb
            inc     rb
+
            ghi     ra
            str     rb
            inc     rb
            glo     ra
            str     rb
            inc     rb
+
            ldi     0                   ; set eof at zero
            str     rb
            inc     rb
            str     rb
            inc     rb
+
            irx                         ; recover create flags
            ldx
            str     rb                  ; and save
            inc     rb
+
            ldi     5                   ; need 5 zeroes
            plo     re
+
 create1:   ldi     0
            str     rb
            inc     rb
            dec     re
            glo     re
            lbnz    create1
+
 create2:   lda     rf                  ; get character from filename
            str     rb                  ; store into buffer
            inc     rb
            lbnz    create2             ; loop back until zero is found
+
            sep     scall               ; get dir sector and offset
            dw      getsecofs
+
            ldi     high scratch        ; get buffer address
            phi     rf
            ldi     low scratch
            plo     rf
+
            glo     rc                  ; save destination descriptor
            stxd
            ghi     rc
            stxd
+
            ldi     0                   ; 32 bytes to write
            phi     rc
            ldi     32
            plo     rc
+
            sep     scall               ; write the dir entry
            dw      o_write
-;           dw      write
+
            sep     scall               ; close the directory
            dw      close
+
            irx                         ; recover new descriptor
            ldxa
            phi     rd
            ldx
            plo     rd
+
            ldi     9
            sep     scall
            dw      setfddwrd
-;           sep     scall               ; write dir sector
-;           dw      setfddrsc
+
            sep     scall               ; write dir offset
            dw      setfddrof
+
            ldi     0                   ; need to set current offset to 0
            phi     r8
            plo     r8
            phi     r7
            plo     r7
+
            ldi     0
            sep     scall
            dw      setfddwrd
-;           sep     scall               ; write current offset
-;           dw      setfdofs
+
            ldi     0ffh                ; need to set current sector to -1
            phi     r8
            plo     r8
            phi     r7
            plo     r7
+
            ldi     15
            sep     scall
            dw      setfddwrd
-;           sep     scall               ; write current offset
-;           dw      setfdsec
+
            ldi     0ch                 ; set flags
            sep     scall
            dw      setfdflgs
+
            ldi     0                   ; need to set eof to 0
            phi     rf
            plo     rf
            sep     scall
            dw      setfdeof
+
            ldi     0feh                ; need to set end of chain
            phi     rf
            plo     rf
            sep     scall
            dw      writelump
+
            sep     scall               ; convert lump to sector
            dw      lumptosec
+
            sep     scall               ; read the sector
            dw      rawread
+
            irx                         ; recover consumed registers
            ldxa
            phi     r7
@@ -3349,7 +3370,9 @@ create2:   lda     rf                  ; get character from filename
            phi     ra
            ldx
            plo     ra
+
            sep     sret                ; return to caller
+
            
 ; *******************************************
 ; *** Get a free directory entry          ***
@@ -3763,7 +3786,7 @@ delete:
            lbnf    delfile             ; jump if file exists
            sep     scall               ; close the directory
            dw      close
-           ldi     1                   ; signal an error
+delfail:   ldi     1                   ; signal an error
 delexit:   shr                         ; shift result into DF
            irx                         ; recover consumed registers
            ldxa
@@ -3869,46 +3892,56 @@ rename:    glo     r7                  ; save consumed registers
            stxd
            ghi     rc
            stxd
+
            sep     scall               ; find directory
            dw      finddir
+
            ldi     high scratch        ; setup scrath area
            phi     rf
            ldi     low scratch
            plo     rf
+
            sep     scall               ; perform directory search
            dw      searchdir
            lbnf    renfile             ; jump if file exists
+
            sep     scall               ; close the directory
            dw      close
-           ldi     1                   ; signal an error
-           irx                         ; drop filename from stack
+
+           irx                         ; drop filename from stack and fail
            irx
-           lbr     delexit             ; use exit from delete
+           lbr     delfail
+
 renfile:   sep     scall               ; close the directory
            dw      close
+
            sep     scall               ; read driectory sector for file
            dw      readsys
+
            glo     r9                  ; point to filename
            adi     12
            plo     r9
            ghi     r9                  ; get offset into sector
            adci    1 
            phi     r9 
+
            irx                         ; recover new name
            ldxa
            phi     rf
            ldx
            plo     rf
-renlp:     lda     rf                  ; get byte from name
-           str     r9                  ; store into dir entry
-           inc     r9                  ; point to next position
-           bnz     renlp               ; loop if a zero was not written
+
+           sep     scall               ; copy filename from rf to r9
+           dw      copyname
+           lbnf    delfail
+
            sep     scall               ; write dir sector back
            dw      writesys
+
            ldi     0                   ; signal success
            lbr     delexit
-           
-           
+
+
 ; *************************
 ; *** Execute a program ***
 ; *** RF - command line ***
@@ -4599,6 +4632,52 @@ loaderr:   ldi      high errnf           ; point to not found message
            sep      scall                ; display it
            dw       o_msg
            lbr      cmdlp                ; loop back for next command
+
+
+; Copy filename from RF to R9
+; Advances RF and R9 pointers
+; Returns DF=0 if invalid name
+
+copyname:  glo      rc
+           stxd
+
+           ldi      20
+           plo      rc
+
+           adi      0
+
+namenext:  lda      rf
+           str      r9
+           inc      r9
+           lbz      endname
+
+           sep      scall
+           dw       f_isalnum
+           lbdf     goodchr
+
+           smi      '_'
+           lbz      goodchr
+
+           smi      '_'-'.'
+           lbz      goodchr
+
+           smi      '.'-'-'
+           lbnz     failchr
+
+goodchr:   dec      rc
+           glo      rc
+           lbnz     namenext
+
+failchr:   adi      0
+
+endname:   irx
+           ldx
+           plo      rc
+
+           sep      sret
+
+           
+
 
 ; *****************************
 ; *** Validate filename     ***
