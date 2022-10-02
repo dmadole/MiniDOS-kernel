@@ -4659,10 +4659,10 @@ namenext:  lda      rf
            smi      '_'
            lbz      goodchr
 
-           smi      '_'-'.'
+           smi      '.'-'_'
            lbz      goodchr
 
-           smi      '.'-'-'
+           smi      '-'-'.'
            lbnz     failchr
 
 goodchr:   dec      rc
@@ -5238,7 +5238,7 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:   db      'Elf/OS Classic 4.2.0',10,13
+bootmsg:   db      'Elf/OS Classic 4.2.1',10,13
            db      'Copyright 2004-2021 by Michael H Riley',10,13,0
 prompt:    db      10,13,'Ready',10,13,': ',0
 crlf:      db      10,13,0
