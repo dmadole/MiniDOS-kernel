@@ -2893,12 +2893,14 @@ cmploop:   lda     rf                  ; compare filenames until end
 
            lbr     searchlp            ; char mismatch, check next entry
 
-cmpzero:   lda     rc                  ; length mismatch, check next entry
-           lbz     searchyes
-           smi     '/'
+cmpzero:   ldn     rc                  ; if length matches, its a find
            lbz     searchyes
 
-           lbr     searchlp
+           smi     '/'                 ; if length mismatch, keep looking
+           lbnz    searchlp
+
+           inc     rc                  ; if ends in slash then skip past it
+           lbr     searchyes
 
 searchno:  ldi     1                   ; match not found, return failure
            lbr     searchex
@@ -3021,20 +3023,10 @@ follow:    ghi     rf                  ; copy path to rb
            glo     rf
            plo     rb
 
-findseplp: lda     rb                  ; get byte from pathname
+findseplp: lda     rf                  ; get byte from pathname
            lbz     founddir            ; jump if no more dirnames
            smi     '/'                 ; check for separator
            lbnz    findseplp           ; keep looping if not found
-
-           glo     rb                  ; save name after sep
-           stxd
-           ghi     rb
-           stxd
-
-           ghi     rf                  ; move pathname
-           phi     rb
-           glo     rf
-           plo     rb
 
            ldi     high scratch        ; setup buffer
            phi     rf
@@ -3044,12 +3036,6 @@ findseplp: lda     rb                  ; get byte from pathname
            sep     scall               ; search for name
            dw      searchdir
 
-           irx                         ; recover pathname
-           ldxa
-           phi     rb
-           ldx
-           plo     rb
-
            lbnf    finddir1            ; jump if entry was found
 
            ldi     errnoffnd           ; signal an error
@@ -3057,22 +3043,12 @@ findseplp: lda     rb                  ; get byte from pathname
 
 finddir1:  glo     rf                  ; point to flags
            adi     6
-           plo     rf
+           plo     rb
            ghi     rf
            adci    0
-           phi     rf
+           phi     rb
 
-           ldn     rf                  ; get flags
-           plo     re                  ; save it
-
-           glo     rf                  ; put rf back
-           smi     6
-           plo     rf
-           ghi     rf
-           smbi    0
-           phi     rf
-
-           glo     re                  ; recover flags
+           ldn     rb                  ; get flags
            ani     1                   ; see if entry is a dir
            lbnz    finddir2            ; jump if so
 
@@ -3082,14 +3058,19 @@ finddir1:  glo     rf                  ; point to flags
 finddir2:  sep     scall               ; set fd to new directory
            dw      setupfd
 
-           ghi     rb                  ; get next part of path
-           phi     rf
-           glo     rb
+           glo     rc
            plo     rf
+           ghi     rc
+           phi     rf
 
            lbr     follow              ; and get next
 
-founddir:  ldi     0                   ; signal success
+founddir:  glo     rb
+           plo     rf
+           ghi     rb
+           phi     rf
+
+           ldi     0                   ; signal success
            shr
            sep     sret                ; return to caller
 
