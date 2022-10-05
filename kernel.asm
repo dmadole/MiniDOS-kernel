@@ -2894,12 +2894,16 @@ cmploop:   lda     rf                  ; compare filenames until end
            lbr     searchlp            ; char mismatch, check next entry
 
 cmpzero:   lda     rc                  ; length mismatch, check next entry
-           lbnz    searchlp
+           lbz     searchyes
+           smi     '/'
+           lbz     searchyes
 
-           ldi     0                   ; match was found, return success
-           lbr     searchex
+           lbr     searchlp
 
 searchno:  ldi     1                   ; match not found, return failure
+           lbr     searchex
+
+searchyes: ldi     0                   ; match was found, return success
 
 searchex:  shr
 
@@ -3022,10 +3026,6 @@ findseplp: lda     rb                  ; get byte from pathname
            smi     '/'                 ; check for separator
            lbnz    findseplp           ; keep looping if not found
 
-           dec     rb                  ; need to write a terminator
-           str     rb
-           inc     rb                  ; point rb back to following name
-
            glo     rb                  ; save name after sep
            stxd
            ghi     rb
@@ -3049,11 +3049,6 @@ findseplp: lda     rb                  ; get byte from pathname
            phi     rb
            ldx
            plo     rb
-
-           dec     rb                  ; replace the /
-           ldi     '/'
-           str     rb
-           inc     rb
 
            lbnf    finddir1            ; jump if entry was found
 
