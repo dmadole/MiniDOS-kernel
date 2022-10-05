@@ -2911,35 +2911,6 @@ searchex:  shr
            plo     rb
            sep     sret                ; return to caller
 
-; ****************************************
-; *** Split pathname at separator      ***
-; *** RF - pathname                    ***
-; *** returns: RF - orignal path       ***
-; ***          RB - path following sep ***
-; ***          DF=0 - separator found  ***
-; ***          DF=1 - ne separator     ***
-; ****************************************
-findsep:   ghi     rf                  ; copy path to rb
-           phi     rb
-           glo     rf
-           plo     rb
-findseplp: lda     rb                  ; get byte from pathname
-           plo     re                  ; keep a copy
-           smi     33                  ; check for space or less
-           lbnf    findsepno           ; no separator
-           glo     re                  ; recover value
-           smi     '/'                 ; check for separator
-           lbnz    findseplp           ; keep looping if not found
-           dec     rb                  ; need to write a terminator
-           ldi     0
-           str     rb
-           inc     rb                  ; point rb back to following name
-           ldi     0                   ; signal separator found
-           shr
-           sep     sret                ; and return to caller
-findsepno: ldi     1                   ; signal no separator
-           shr
-           sep     sret                ; return to caller
 
 ; ************************************
 ; *** Setup new file descriptor    ***
@@ -3035,64 +3006,93 @@ openeof:   lda     rf                  ; get eof
 ; ***          DF=0 - success         ***
 ; ***          DF=1 - error           ***
 ; ***************************************
-follow:    sep     scall               ; check for dirname
-           dw      findsep
-           lbdf    founddir            ; jump if no more dirnames
+follow:    ghi     rf                  ; copy path to rb
+           phi     rb
+           glo     rf
+           plo     rb
+
+findseplp: lda     rb                  ; get byte from pathname
+           lbz     founddir            ; jump if no more dirnames
+
+           smi     '/'                 ; check for separator
+           lbnz    findseplp           ; keep looping if not found
+
+           dec     rb                  ; need to write a terminator
+           str     rb
+           inc     rb                  ; point rb back to following name
+
            glo     rb                  ; save name after sep
            stxd
            ghi     rb
            stxd
+
            ghi     rf                  ; move pathname
            phi     rb
            glo     rf
            plo     rb
+
            ldi     high scratch        ; setup buffer
            phi     rf
            ldi     low scratch
            plo     rf
+
            sep     scall               ; search for name
            dw      searchdir
+
            irx                         ; recover pathname
            ldxa
            phi     rb
            ldx
            plo     rb
+
            dec     rb                  ; replace the /
            ldi     '/'
            str     rb
            inc     rb
+
            lbnf    finddir1            ; jump if entry was found
+
            ldi     errnoffnd           ; signal an error
            lbr     error
+
 finddir1:  glo     rf                  ; point to flags
            adi     6
            plo     rf
            ghi     rf
            adci    0
            phi     rf
+
            ldn     rf                  ; get flags
            plo     re                  ; save it
+
            glo     rf                  ; put rf back
            smi     6
            plo     rf
            ghi     rf
            smbi    0
            phi     rf
+
            glo     re                  ; recover flags
            ani     1                   ; see if entry is a dir
            lbnz    finddir2            ; jump if so
+
            ldi     errinvdir           ; invalid directory error
            lbr     error
+
 finddir2:  sep     scall               ; set fd to new directory
            dw      setupfd
+
            ghi     rb                  ; get next part of path
            phi     rf
            glo     rb
            plo     rf
+
            lbr     follow              ; and get next
+
 founddir:  ldi     0                   ; signal success
            shr
            sep     sret                ; return to caller
+
 
 ; ***********************************************
 ; *** Find directory                          ***
