@@ -2826,37 +2826,41 @@ getsecofs: inc     rd                  ; move to low word of offset
 ; ***          DF=0  - entry found      ***
 ; ***          DF=1  - entry not found  ***
 ; *****************************************
-searchdir: glo     rb                  ; save consumed registers
-           stxd
-           ghi     rb
-           stxd
-           glo     ra
+searchdir: glo     ra                  ; should be pushed upstream
            stxd
            ghi     ra
            stxd
+
            ghi     rf                  ; save buffer position
            phi     ra
            glo     rf
            plo     ra
-searchlp:  sep     scall               ; get current sector, offset
+
+searchlp:  sep     scall               ; get current sector and offset
            dw      getsecofs
+
            ghi     ra                  ; get buffer
            phi     rf
            glo     ra
            plo     rf
+
            ldi     0                   ; need to read 32 bytes
            phi     rc
            ldi     32
            plo     rc
+
            sep     scall               ; perform read
            dw      o_read
+
            glo     rc                  ; see if enough bytes were read
            smi     32
            lbnz    searchno            ; jump if end of dir was hit
+
            ghi     ra                  ; get buffer
            phi     rf
            glo     ra
            plo     rf
+
            lda     rf                  ; see if entry is valid
            lbnz    entrygood
            lda     rf
@@ -2865,50 +2869,51 @@ searchlp:  sep     scall               ; get current sector, offset
            lbnz    entrygood
            lda     rf
            lbnz    entrygood
+
            lbr     searchlp            ; entry was no good, try again
-entrygood: glo     rd                  ; save descriptor
-           stxd
-           ghi     rd
-           stxd
-           ghi     rb                  ; get filename
-           phi     rd
-           glo     rb
-           plo     rd
-           glo     ra                  ; recover buffer
-           adi     12                  ; pointing at filename
+
+entrygood: glo     ra                  ; get pointer to filename in the
+           adi     12                  ;  directory entry
            plo     rf
-           ghi     ra                  ; recover buffer
+           ghi     ra
            adci    0
            phi     rf
-           sep     scall               ; compare the strings
-           dw      f_strcmp
-           plo     re                  ; save result
-           irx                         ; recover descriptor
-           ldxa
-           phi     rd
-           ldx
-           plo     rd
-           glo     re                  ; get result
-           lbz     searchyes           ; entry was found
-           lbr     searchlp            ; and keep looking
-searchyes:
-           ldi     0                   ; indicate entry was found
-           lbr     searchex            ; and return
-searchno:  ldi     1                   ; indicate not found
+
+           glo     rb                  ; get copy of filename to match
+           plo     rc
+           ghi     rb
+           phi     rc
+
+cmploop:   lda     rf                  ; compare filenames until end
+           lbz     cmpzero
+           str     r2
+           lda     rc
+           xor
+           lbz     cmploop
+
+           lbr     searchlp            ; char mismatch, check next entry
+
+cmpzero:   lda     rc                  ; length mismatch, check next entry
+           lbnz    searchlp
+
+           ldi     0                   ; match was found, return success
+           lbr     searchex
+
+searchno:  ldi     1                   ; match not found, return failure
+
 searchex:  shr
+
            ghi     ra                  ; recover buffer
            phi     rf
            glo     ra
            plo     rf
+
            irx                         ; recover used registers
            ldxa
            phi     ra
-           ldxa
-           plo     ra
-           ldxa
-           phi     rb
            ldx
-           plo     rb
+           plo     ra
+
            sep     sret                ; return to caller
 
 
@@ -3006,6 +3011,7 @@ openeof:   lda     rf                  ; get eof
 ; ***          DF=0 - success         ***
 ; ***          DF=1 - error           ***
 ; ***************************************
+
 follow:    ghi     rf                  ; copy path to rb
            phi     rb
            glo     rf
@@ -3013,7 +3019,6 @@ follow:    ghi     rf                  ; copy path to rb
 
 findseplp: lda     rb                  ; get byte from pathname
            lbz     founddir            ; jump if no more dirnames
-
            smi     '/'                 ; check for separator
            lbnz    findseplp           ; keep looping if not found
 
