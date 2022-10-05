@@ -2820,7 +2820,7 @@ getsecofs: inc     rd                  ; move to low word of offset
 ; *** search directory for an entry     ***
 ; *** RD - file descriptor (dir)        ***
 ; *** RF - Where to put directory entry ***
-; *** RC - filename (asciiz)            ***
+; *** RB - filename (asciiz)            ***
 ; *** Returns: R8:R7 - Dir Sector       ***
 ; ***             R9 - Dir Offset       ***
 ; ***          DF=0  - entry found      ***
@@ -2838,10 +2838,6 @@ searchdir: glo     rb                  ; save consumed registers
            phi     ra
            glo     rf
            plo     ra
-           ghi     rc                  ; save filename
-           phi     rb
-           glo     rc
-           plo     rb
 searchlp:  sep     scall               ; get current sector, offset
            dw      getsecofs
            ghi     ra                  ; get buffer
@@ -2854,7 +2850,6 @@ searchlp:  sep     scall               ; get current sector, offset
            plo     rc
            sep     scall               ; perform read
            dw      o_read
-;           dw      read
            glo     rc                  ; see if enough bytes were read
            smi     32
            lbnz    searchno            ; jump if end of dir was hit
@@ -2901,10 +2896,6 @@ searchyes:
            lbr     searchex            ; and return
 searchno:  ldi     1                   ; indicate not found
 searchex:  shr
-           ghi     rb                  ; recover filename
-           phi     rc
-           glo     rb
-           plo     rc
            ghi     ra                  ; recover buffer
            phi     rf
            glo     ra
@@ -2924,25 +2915,25 @@ searchex:  shr
 ; *** Split pathname at separator      ***
 ; *** RF - pathname                    ***
 ; *** returns: RF - orignal path       ***
-; ***          RC - path following sep ***
+; ***          RB - path following sep ***
 ; ***          DF=0 - separator found  ***
 ; ***          DF=1 - ne separator     ***
 ; ****************************************
-findsep:   ghi     rf                  ; copy path to rc
-           phi     rc
+findsep:   ghi     rf                  ; copy path to rb
+           phi     rb
            glo     rf
-           plo     rc
-findseplp: lda     rc                  ; get byte from pathname
+           plo     rb
+findseplp: lda     rb                  ; get byte from pathname
            plo     re                  ; keep a copy
            smi     33                  ; check for space or less
            lbnf    findsepno           ; no separator
            glo     re                  ; recover value
            smi     '/'                 ; check for separator
            lbnz    findseplp           ; keep looping if not found
-           dec     rc                  ; need to write a terminator
+           dec     rb                  ; need to write a terminator
            ldi     0
-           str     rc
-           inc     rc                  ; point rc back to following name
+           str     rb
+           inc     rb                  ; point rb back to following name
            ldi     0                   ; signal separator found
            shr
            sep     sret                ; and return to caller
@@ -3047,14 +3038,14 @@ openeof:   lda     rf                  ; get eof
 follow:    sep     scall               ; check for dirname
            dw      findsep
            lbdf    founddir            ; jump if no more dirnames
-           glo     rc                  ; save name after sep
+           glo     rb                  ; save name after sep
            stxd
-           ghi     rc
+           ghi     rb
            stxd
            ghi     rf                  ; move pathname
-           phi     rc
+           phi     rb
            glo     rf
-           plo     rc
+           plo     rb
            ldi     high scratch        ; setup buffer
            phi     rf
            ldi     low scratch
@@ -3063,13 +3054,13 @@ follow:    sep     scall               ; check for dirname
            dw      searchdir
            irx                         ; recover pathname
            ldxa
-           phi     rc
+           phi     rb
            ldx
-           plo     rc
-           dec     rc                  ; replace the /
+           plo     rb
+           dec     rb                  ; replace the /
            ldi     '/'
-           str     rc
-           inc     rc
+           str     rb
+           inc     rb
            lbnf    finddir1            ; jump if entry was found
            ldi     errnoffnd           ; signal an error
            lbr     error
@@ -3094,9 +3085,9 @@ finddir1:  glo     rf                  ; point to flags
            lbr     error
 finddir2:  sep     scall               ; set fd to new directory
            dw      setupfd
-           ghi     rc                  ; get next part of path
+           ghi     rb                  ; get next part of path
            phi     rf
-           glo     rc
+           glo     rb
            plo     rf
            lbr     follow              ; and get next
 founddir:  ldi     0                   ; signal success
@@ -3107,7 +3098,7 @@ founddir:  ldi     0                   ; signal success
 ; *** Find directory                          ***
 ; *** RF - filename                           ***
 ; *** Returns: RD - Dir descriptor            ***
-; ***          RC - first char following dirs ***
+; ***          RB - first char following dirs ***
 ; ***          DF=0 - dir was found           ***
 ; ***          DF=1 - nonexistant dir         ***
 ; ***********************************************
@@ -3144,9 +3135,9 @@ findrel:   sep     scall               ; follow dirs
            dw      follow
            lbdf    error               ; jump on error
            ghi     rf                  ; transfer name
-           phi     rc
+           phi     rb
            glo     rf
-           plo     rc
+           plo     rb
            ldi     0                   ; signal success
            shr
            sep     sret                ; return to caller
@@ -3173,21 +3164,21 @@ execdir:   sep     scall               ; open the master dir
 ; *** Returns: RD - Dir descriptor            ***
 ; ***          RF - first char following dirs ***
 ; ***********************************************
-opendir:   glo     rc                  ; save consumed register
+opendir:   glo     rb                  ; save consumed register
            stxd
-           ghi     rc
+           ghi     rb
            stxd
            sep     scall               ; call find dir routine
            dw      finddir
-           ghi     rc                  ; put end if dir back into rf
+           ghi     rb                  ; put end if dir back into rf
            phi     rf
-           glo     rc
+           glo     rb
            plo     rf
            irx                         ; recover consumed register
            ldxa
-           phi     rc
+           phi     rb
            ldx
-           plo     rc
+           plo     rb
            sep     sret                ; return to caller
 
 ; **********************************
@@ -3701,9 +3692,9 @@ allow:     ldi     0                   ; no file flags
            ldi     2                   ; set flags for executable file
            plo     r7
 
-allow2:    glo     rc                  ; save filename address
+allow2:    glo     rb                  ; save filename address
            stxd
-           ghi     rc
+           ghi     rb
            stxd
 
            glo     r7                  ; save flags
@@ -4103,6 +4094,10 @@ mkdir:     glo     rf                  ; save pathname address
            stxd
            ghi     rd
            stxd
+           glo     rb                  ; save pathname address
+           stxd
+           ghi     rb
+           stxd
            glo     r7                  ; save pathname address
            stxd
            ghi     rf                  ; copy pathname address
@@ -4140,6 +4135,10 @@ mkdir_go:  ldi     high intfildes      ; temporariy fildes
            ldxa
            plo     r7
            ldxa
+           phi     rb
+           ldxa
+           plo     rb
+           ldxa
            phi     rd
            ldxa
            plo     rd
@@ -4151,9 +4150,9 @@ mkdir_go:  ldi     high intfildes      ; temporariy fildes
            lbr     error
 mkdir1:    sep     scall               ; open directory
            dw      finddir
-           glo     rc                  ; save new dir name
+           glo     rb                  ; save new dir name
            stxd
-           ghi     rc
+           ghi     rb
            stxd
            sep     scall               ; find a free dir entry
            dw      freedir
@@ -4184,6 +4183,10 @@ mkdirok:   sep     scall               ; close the new dir
 mkdirrt:   irx                         ; recover consumed registers
            ldxa
            plo     r7
+           ldxa
+           phi     rb
+           ldxa
+           plo     rb
            ldxa
            phi     rd
            ldxa
@@ -4265,9 +4268,9 @@ chdir:     ldn     rf                  ; get first byte of pathname
            lbz     viewdir             ; jump if to view
            sep     scall               ; check for final slash
            dw      finalsl
-           glo     rc                  ; save consumed registers
+           glo     rb                  ; save consumed registers
            stxd
-           ghi     rc
+           ghi     rb
            stxd
            glo     rd                  ; save consumed registers
            stxd
@@ -4290,9 +4293,9 @@ chdir:     ldn     rf                  ; get first byte of pathname
            ldxa
            plo     rd
            ldxa
-           phi     rc
+           phi     rb
            ldx
-           plo     rc
+           plo     rb
            lbdf    chdirerr            ; jump on error
            glo     ra                  ; save consumed register
            stxd
