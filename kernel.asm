@@ -1598,7 +1598,6 @@ openmd:    glo     r7                  ; save consumed registers
 
            sep     sret                ; return to caller
 
-
 ; **************************************
 ; *** Get a free lump                ***
 ; *** Returns: RA - lump             ***
@@ -2923,91 +2922,132 @@ searchex:  shr
            sep     sret                ; return to caller
 
 
-; ************************************
-; *** Setup new file descriptor    ***
-; ***    RD - descriptor to setup  ***
-; *** R8:R7 - dir sector           ***
-; ***    R9 - dir offset           ***
-; ***    RF - pointer to dir entry ***
-; ************************************
-setupfd:   ldi     9
-           sep     scall
-           dw      setfddwrd
-;setupfd:   sep     scall               ; set dir sector
-;           dw      setfddrsc
-           sep     scall               ; set dir offset
-           dw      setfddrof
-           ldi     0                   ; zero current offset
-           phi     r8
-           plo     r8
-           phi     r7
-           plo     r7
-           ldi     0
-           sep     scall
-           dw      setfddwrd
-;           sep     scall
-;           dw      setfdofs            ; set offset
-           ldi     0ffh                ; need -1
-           phi     r8
-           plo     r8
-           phi     r7
-           plo     r7
-           ldi     15
-           sep     scall
-           dw      setfddwrd
-;           sep     scall               ; set current sector
-;           dw      setfdsec
-           ldi     high scratch        ; setup scrath area
-           phi     rf
-           ldi     low scratch
-           plo     rf
-           inc     rf                  ; point to starting lump
+; Setup new file descriptor
+;
+; Input:
+;   R8:R7 - Directory entry sector
+;   R9 - Directory entry offset
+;   RD - File descriptor to setup
+;   RF - Pointer to directory entry
+;
+; Output:
+;   R8 - Modified
+;   R7 - Modified
+;   R9 - Modified
+;   RA - Modified
+;   RD - File descriptor unchanged
+;   RF - Modified
+
+setupfd:   glo     rd                  ; move pointer to fill downwards
+           adi     14
+           plo     rd
+           ghi     rd
+           adci    0
+           phi     rd
+
+           sex     rd                  ; to use stxd to fill
+
+           glo     r9                  ; set directory entry offset
+           stxd
+           ghi     r9
+           stxd
+
+           glo     r7                  ; set directory entry sector
+           stxd
+           ghi     r7
+           stxd
+           glo     r8
+           stxd
+           ghi     r8
+           stxd
+
+           inc     rf                  ; skip msbs in starting lump
            inc     rf
-           lda     rf                  ; get starting lump
+
+           lda     rf                  ; get 16-bit starting lump
            phi     ra
            lda     rf
            plo     ra
-           sep     scall               ; convert to sector
-           dw      lumptosec
-           sep     scall               ; read the first sector of the file
-           dw      rawread
-           inc     rf                  ; point to flags
-           inc     rf
-           ldn     rf                  ; get flags
-           ani     7                   ; keep only bottom 3 bits
-           shl                         ; shift into correct position
-           shl
-           shl
-           shl
-           shl
-           ori     08h                 ; set initial flags
-           sep     scall
-           dw      setfdflgs
-           dec     rf                  ; move dirent pointer back to eof
-           dec     rf
-           sep     scall               ; get lump value
-           dw      readlump
-           ghi     ra                  ; check end code
-           smi     0feh
-           lbnz    openeof
-           glo     ra
-           smi     0feh
-           lbnz    openeof
-;           ldi     0ch                 ; signal final lump
-           sep     scall                ; get flags
-           dw      getfdflgs
-           ori     004h                 ; signal final lump
-           sep     scall
-           dw      setfdflgs
-openeof:   lda     rf                  ; get eof
-           phi     ra
+
+           lda     rf                  ; get eof from directory entry
+           phi     r9
            lda     rf
+           plo     r9
+
+           sep     scall               ; convert lump to starting sector
+           dw      lumptosec
+
+           sep     scall               ; lookup next lump in file
+           dw      readlump
+
+           sex     rd                  ; set again since scall reset
+
+           ghi     ra                  ; if not last lump set flags to 8
+           smi     0feh
+           lbnz    noteof
+
+           glo     ra                  ; if last lump set flags to 8+4
+           smi     0feh
+           lbz     goteof
+
+noteof:    ldi     4                   ; compute flags value into fd
+goteof:    xri     4+8
+           str     rd
+
+           ldn     rf                  ; get flags from directory entry,
+           shrc                        ;  move low 3 bits to high 3 bits
+           shrc
+           shrc
+           shrc
+
+           ani     0e0h                ; mask high 3 bits and combine with
+           or                          ;  bits already in fd flags
+           stxd
+
+           glo     r9                  ; save eof offset into fd
+           stxd
+           ghi     r9
+           stxd
+
+           ldn     rd                  ; get dta address
            plo     rf
-           ghi     ra
+           dec     rd
+           ldn     rd
            phi     rf
-           sep     scall               ; setup eof
-           dw      setfdeof
-           sep     sret                ; return to caller
+           dec     rd
+
+           ldi     0                   ; set current offset to zero
+           stxd
+           stxd
+           stxd
+           str     rd
+
+           glo     rd                  ; get pointer to loaded sector
+           adi     18
+           plo     r9
+           ghi     rd
+           adci    0
+           phi     r9
+
+           sex     r9                  ; to use stxd to fill downward
+
+           glo     r7                  ; fill in loaded sector
+           stxd
+           ghi     r7
+           stxd
+           glo     r8
+           stxd
+           ghi     r8
+           stxd
+
+           ori     0e0h                ; set lba mode
+           phi     r8
+
+           sep     scall               ; load first sector
+           dw      d_ideread
+
+           sep     sret                 ; return
+
 
 ; ***************************************
 ; *** Follow a directory tree         ***
