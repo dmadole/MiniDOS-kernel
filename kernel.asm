@@ -4399,6 +4399,7 @@ viewdirlp: lda     ra                  ; get byte from current dir
 ; *******************************
 rmdir:     sep     scall               ; check for final slash
            dw      finalsl
+
            glo     r7                  ; save consumed registers
            stxd
            ghi     r7
@@ -4423,36 +4424,39 @@ rmdir:     sep     scall               ; check for final slash
            stxd
            ghi     rc
            stxd
-           ghi     ra
-           phi     rf
-           glo     ra
-           plo     rf
+
            sep     scall               ; open the directory
            dw      o_opendir
            lbnf    rmdirlp             ; jump if dir opened
+
            ldi     errnoffnd           ; signal not found error
 rmdirerr:  shl
            ori     1
            shr
            lbr     delexit             ; and return
+
 rmdirlp:   ldi     0                   ; need to read 32 bytes
            phi     rc
            ldi     32
            plo     rc
+
            ldi     high scratch        ; where to put it
            phi     rf
            ldi     low scratch
            plo     rf
+
            sep     scall               ; read the bytes
            dw      o_read
-;           dw      read
+
            glo     rc                  ; see if eof was hit
            smi     32
            lbnz    rmdireof            ; jump if dir was empty
+
            ldi     high scratch        ; point to buffer
            phi     rf
            ldi     low scratch
            plo     rf
+
            lda     rf                  ; see if entry is empty
            lbnz    rmdirno             ; jump if not
            lda     rf                  ; see if entry is empty
@@ -4461,23 +4465,29 @@ rmdirlp:   ldi     0                   ; need to read 32 bytes
            lbnz    rmdirno             ; jump if not
            lda     rf                  ; see if entry is empty
            lbnz    rmdirno             ; jump if not
+
            lbr     rmdirlp             ; read rest of dir
+
 rmdirno:   ldi     errdirnotempty      ; indicate not empty error
            lbr     rmdirerr            ; and error out
+
 rmdireof:  ldi     9
            sep     scall
            dw      getfddwrd
-;rmdireof:  sep     scall               ; get direcotry info from descriptor
-;           dw      getfddrsc
+
            sep     scall               ; get direcotry info from descriptor
            dw      getfddrof
+
            sep     scall
            dw      readsys
+
            ghi     r9                  ; get offset into sector
            adi     1
            phi     r9
+
            inc     r9                  ; point to starting lump
            inc     r9
+
            lbr     delgo               ; and delete the dir
 
 
