@@ -2851,12 +2851,7 @@ getsecofs: inc     rd                  ; move to low word of offset
 ; ***          DF=0  - entry found      ***
 ; ***          DF=1  - entry not found  ***
 ; *****************************************
-searchdir: glo     ra                  ; should be pushed upstream
-           stxd
-           ghi     ra
-           stxd
-
-           ghi     rf                  ; save buffer position
+searchdir: ghi     rf                  ; save buffer position
            phi     ra
            glo     rf
            plo     ra
@@ -2938,12 +2933,6 @@ searchex:  shr
            phi     rf
            glo     ra
            plo     rf
-
-           irx                         ; recover used registers
-           ldxa
-           phi     ra
-           ldx
-           plo     ra
 
            sep     sret                ; return to caller
 
