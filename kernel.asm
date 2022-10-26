@@ -19,12 +19,38 @@ vcursec:   equ     00f0h
 vsecbuf:   equ     00f4h
 vhighmem:  equ     00feh
 
-errexists: equ     1
-errnoffnd: equ     2
-errinvdir: equ     3
-errisdir:  equ     4
-errdirnotempty: equ   5
-errnotexec:     equ   6
+
+          ; New names for error codes that are a little more concise, self-
+          ; explanitory, and that follow the ?_ type naming convention of
+          ; other public kernel API constants. Also, keep length to 10
+          ; characters maximum like other existing ?_ API constants.
+
+e_exists:   equ 1         ; tried to create something that already exists
+e_notfound: equ 2         ; could not find something being looked for
+e_notdir:   equ 3         ; item in path that should be a directory is not
+e_notfile:  equ 4         ; tried a file operation on something not a file
+e_notempty: equ 5         ; tried to remove a directory that is not empty
+e_notexec:  equ 6         ; tried to execute something not executable
+
+
+          ; New error codes not previously defined but needed to cover more
+          ; situations reasonably.
+
+e_nospace:  equ 7         ; not enough space available to complete operation
+e_deverror: equ 8         ; hardware failure reading or writing the device
+e_readonly: equ 9         ; write operation tried on something read-only
+e_invname:  equ 10        ; file name is not a valid length or format
+e_notopen:  equ 11        ; tried operation on a descriptor that is not open
+
+
+          ; Legacy error constants that were never widely implemented.
+
+errexists:      equ   e_exists
+errnoffnd:      equ   e_notfound
+errinvdir:      equ   e_notdir
+errisdir:       equ   e_notfile
+errdirnotempty: equ   e_notempty
+errnotexec:     equ   e_notexec
 
 ff_dir:     equ     1
 ff_exec:    equ     2
