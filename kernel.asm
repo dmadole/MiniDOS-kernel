@@ -3561,6 +3561,11 @@ execfail:  ldi     1                   ; signal error
 ; *** RF - filename                 ***
 ; *** RD - file descriptor          ***
 ; *** R7 - flags                    ***
+; ***      1 - create if no exist   ***
+; ***      2 - truncate on open     ***
+; ***      4 - open for append      ***
+; ***      8 - executables only     ***
+; ***     16 - allow directories    ***
 ; *** Returns: RD - file descriptor ***
 ; ***          DF=0 - success       ***
 ; ***          DF=1 - error         ***
@@ -3589,20 +3594,22 @@ open:      push    r7                  ; save consumed registers
            dw      searchdir
            lbdf    newfile             ; jump if file needs creation
 
+           irx                         ; advance stack to open flags
+
            ldi     high (scratch+6)    ; get pointer to dirent flags
            phi     ra
            ldi     low (scratch+6)
            plo     ra
 
-           ldn     ra                  ; check flags if a directory
+           ldn     ra                  ; check direct flags if a directory
            ani     1
-           lbz     notdir
+           lbz     dirok
 
-           irx                         ; discard flags and return error
-           lbr     openerr
+           ldx                         ; get flags, check if allow directory
+           ani     16                  ; is set
+           lbz     openerr
 
-notdir:    irx                         ; remove flags from stack
-           ldx                         ; get flags
+dirok:     ldx                         ; get flags
            stxd                        ; and keep on stack
 
            ani     2                   ; see if need to truncate file
