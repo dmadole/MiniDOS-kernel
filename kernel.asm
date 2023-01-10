@@ -479,23 +479,22 @@ secloaded: ghi     re                  ; only have to save half
 
            sex     re                  ; lsb-to-msb to fail soonest
            glo     r7
-           xor
+           sm
            lbnz    secnot
 
            dec     re
            ghi     r7
-           xor
+           sm
            lbnz    secnot
 
            dec     re
            glo     r8
-           xor
+           sm
            lbnz    secnot
 
-           dec     re                  ; ignore high 3 bits
+           dec     re
            ghi     r8
-           xor
-           ani     1fh
+           sm
            lbz     secyes
 
 secnot:    ldi     0                   ; return df=0
@@ -515,27 +514,27 @@ secyes:    ldi     1                   ; return df=1
 ; *** See if sector needs to be written ***
 ; *** RD - file descriptor              ***
 ; *****************************************
-
-checkwrt:  glo     rd                  ; need to point to flags
+checkwrt:
+           glo     rd                  ; need to point to flags
            adi     8
            plo     rd
            ghi     rd
            adci    0
            phi     rd
-
            ldn     rd                  ; get flags
+
            shr                         ; shift first bit into DF
            lbdf    checkwrt1           ; jump if bet was set
 
+;           ani     1                   ; see if sector has been written to
+;           lbnz    checkwrt1           ; jump if so
            glo     rd                  ; restore descriptor
            smi     8
            plo     rd
            ghi     rd
            smbi    0
            phi     rd
-
            sep     sret                ; and return to caller
-
 checkwrt1: glo     r7                  ; save consumed registers
            stxd
            ghi     r7
@@ -544,14 +543,12 @@ checkwrt1: glo     r7                  ; save consumed registers
            stxd
            ghi     r8
            stxd
-
            glo     rd                  ; point descripter to current sector
            adi     7
            plo     rd
            ghi     rd
            adci    0
            phi     rd
-
            lda     rd                  ; get current sector
            phi     r8
            lda     rd
@@ -560,17 +557,14 @@ checkwrt1: glo     r7                  ; save consumed registers
            phi     r7
            lda     rd
            plo     r7
-
            glo     rd                  ; place descriptor back at beginning
            smi     19
            plo     rd
            ghi     rd
            smbi    0
            phi     rd
-
            sep     scall               ; write the sector
            dw      rawwrite
-
            irx                         ; recover consumed registers
            ldxa
            phi     r8
@@ -580,7 +574,6 @@ checkwrt1: glo     r7                  ; save consumed registers
            phi     r7
            ldx
            plo     r7
-
            sep     sret                ; return to caller
 
 
@@ -590,8 +583,12 @@ checkwrt1: glo     r7                  ; save consumed registers
 ; ***    RD - File descriptor         ***
 ; ***************************************
 
-rawwrite:  ghi     r8                  ; if high byte is 255 then skip
-           xri     255
+rawwrite:  ghi     r8                  ; if msb is zero then its valid
+           lbz     rawwrite1
+
+           inc     r8                  ; if incrementing makes msb become
+           ghi     r8                  ;  zero then it was not valid
+           dec     r8
            lbz     return
 
 rawwrite1: ldi     1
@@ -603,7 +600,7 @@ rawwrite1: ldi     1
 
 ; ***************************************
 ; *** Read raw sector                 ***
-; *** R8:R7 - Sector address to read  ***
+; *** R8:R7 - Sector address to write ***
 ; ***    RD - File descriptor         ***
 ; ***************************************
 rawread:   sep     scall               ; see if requested sector is already in
@@ -654,9 +651,9 @@ dorawio:   glo     rf                  ; save consumed register
            glo     r8
            stxd
            ghi     r8
-           stxd
+           str     rd
 
-           ori     0e0h                ; set lba mode
+           ori     0e0h                ; force lba mode
            phi     r8
 
            glo     re
@@ -666,11 +663,10 @@ dorawio:   glo     rf                  ; save consumed register
            dw      d_ideread
            lbr     rawiorst
 
-doidewrt:  sep     scall               ; call bios to write sector
+doidewrt:  sep     scall               ; call bios to read sector
            dw      d_idewrite
 
-rawiorst:  inc     rd                  ; recover high r8
-           ldn     rd
+rawiorst:  ldn     rd                  ; recover high r8
            phi     r8
 
            glo     rd                  ; move to current sector
@@ -718,21 +714,17 @@ readsys:   glo     rd
            stxd
            ghi     rd
            stxd
-
            ldi     high sysfildes      ; get system file descriptor
            phi     rd
            ldi     low sysfildes
            plo     rd
-
            sep     scall               ; read the sector
            dw      rawread
-
            irx                         ; restore consumed registers
            ldxa
            phi     rd
            ldx
            plo     rd
-
            sep     sret                ; return to caller
 
 
@@ -1533,13 +1525,10 @@ seeknot2:  dec     rd                  ; restore descriptor
 
 ; *************************************
 ; *** Open master directory         ***
-; *** Input: D - drive number 0-1   ***
 ; *** Returns: RD - file descriptor ***
 ; *************************************
 
-openmd:    plo     re                  ; save drive number
-
-           glo     r7                  ; save consumed registers
+openmd:    glo     r7                  ; save consumed registers
            stxd
            ghi     r7
            stxd
@@ -1548,14 +1537,8 @@ openmd:    plo     re                  ; save drive number
            ghi     r8
            stxd
 
-           glo     re                  ; set drive number
-           shl
-           shl
-           shl
-           shl
-           phi     r8
-
            ldi     0                   ; need to read sector 0
+           phi     r8
            plo     r8
            phi     r7
            plo     r7
@@ -3077,10 +3060,6 @@ goteof:    xri     4+8
 
            sep     scall               ; load first sector
            dw      d_ideread
-
-           inc     r9                  ; recover high r8
-           ldn     r9
-           phi     r8
 
            sep     sret                 ; return
 
