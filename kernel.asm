@@ -6,17 +6,13 @@
 ; *** without express written permission from the author.         ***
 ; *******************************************************************
 
-#include  ops.inc
-#include  bios.inc
+#include ops.inc
+#include bios.inc
 
-         org     300h
+            org     300h
 
-keybuf:  equ     080h
-dta:     equ     100h
-
-vcursec:   equ     00f0h
-vsecbuf:   equ     00f4h
-vhighmem:  equ     00feh
+keybuf:     equ     080h
+dta:        equ     100h
 
 
           ; New names for error codes that are a little more concise, self-
@@ -57,47 +53,47 @@ ff_write:   equ     4
 ff_hide:    equ     8
 ff_archive: equ     16
 
-o_cdboot:  lbr     coldboot
-o_wrmboot: lbr     warmboot
-o_open:    lbr     open
-o_read:    lbr     read
-o_write:   lbr     write
-o_seek:    lbr     seek
-o_close:   lbr     close
-o_opendir: lbr     opendir
-o_delete:  lbr     delete
-o_rename:  lbr     rename
-o_exec:    lbr     exec
-o_mkdir:   lbr     mkdir
-o_chdir:   lbr     chdir
-o_rmdir:   lbr     rmdir
-o_rdlump:  lbr     readlump
-o_wrtlump: lbr     writelump
-o_type:    lbr     f_tty
-o_msg:     lbr     f_msg
-o_readkey: lbr     f_read
-o_input:   lbr     f_input
-o_prtstat: lbr     return
-o_print:   lbr     return
-o_execdef: lbr     execbin
-o_setdef:  lbr     setdef
-o_kinit:   lbr     kinit
-o_inmsg:   lbr     f_inmsg
-o_getdev:  lbr     f_getdev
-o_gettod:  lbr     f_gettod
-o_settod:  lbr     f_settod
-o_inputl:  lbr     f_inputl
-o_boot:    lbr     f_boot
-o_tty:     lbr     f_tty
-o_setbd:   lbr     f_setbd
+o_cdboot:   lbr     coldboot
+o_wrmboot:  lbr     warmboot
+o_open:     lbr     open
+o_read:     lbr     read
+o_write:    lbr     write
+o_seek:     lbr     seek
+o_close:    lbr     close
+o_opendir:  lbr     opendir
+o_delete:   lbr     delete
+o_rename:   lbr     rename
+o_exec:     lbr     exec
+o_mkdir:    lbr     mkdir
+o_chdir:    lbr     chdir
+o_rmdir:    lbr     rmdir
+o_rdlump:   lbr     readlump
+o_wrtlump:  lbr     writelump
+o_type:     lbr     f_tty
+o_msg:      lbr     f_msg
+o_readkey:  lbr     f_read
+o_input:    lbr     f_input
+o_prtstat:  lbr     return
+o_print:    lbr     return
+o_execdef:  lbr     execbin
+o_setdef:   lbr     setdef
+o_kinit:    lbr     kinit
+o_inmsg:    lbr     f_inmsg
+o_getdev:   lbr     f_getdev
+o_gettod:   lbr     f_gettod
+o_settod:   lbr     f_settod
+o_inputl:   lbr     f_inputl
+o_boot:     lbr     f_boot
+o_tty:      lbr     f_tty
+o_setbd:    lbr     f_setbd
 o_initcall: lbr    f_initcall
-o_brktest: lbr     f_brktest
-o_devctrl: lbr     deverr
-o_alloc:   lbr     alloc
-o_dealloc: lbr     dealloc
-o_termctl: lbr     noopen
-o_nbread:  lbr     f_nbread
-o_memctrl: lbr     deverr
+o_brktest:  lbr     f_brktest
+o_devctrl:  lbr     deverr
+o_alloc:    lbr     alloc
+o_dealloc:  lbr     dealloc
+o_termctl:  lbr     noopen
+o_nbread:   lbr     f_nbread
+o_memctrl:  lbr     deverr
 
 deverr:    ldi     1                   ; error=0, device not found
            shr                         ; Set df to indicate error
@@ -128,7 +124,7 @@ iserve:    dec     r2
 ivec:      dw      intret
 
            org     400h
-version:   db      4,2,1
+version:   db      4,3,1
 
 build:     dw      [build]
 
@@ -159,23 +155,23 @@ intflags:  db      0                   ; flags
            dw      0                   ; dir offset
            db      255,255,255,255     ; current sector
 
-himem:     dw      0
+himem:      dw      0
 d_idereset: lbr    f_idereset          ; jump to bios ide reset
-d_ideread: lbr     f_ideread           ; jump to bios ide read
+d_ideread:  lbr     f_ideread           ; jump to bios ide read
 d_idewrite: lbr    f_idewrite          ; jump to bios ide write
 d_reapheap: lbr    reapheap            ; passthrough to heapreaper
 d_progend:  lbr    warm3
-d_lmpsize: lbr     return              ; deprecated and unnecessary
-           db      0,0,0,0
-           db      0,0,0,0,0,0,0
-shelladdr: dw      0
-stackaddr: dw      0
-lowmem:    dw      04000h
-retval:    db      0
-heap:      dw      0
-d_incofs:  lbr     incofs1             ; internal vector, not a published call
-d_append:  lbr     append              ; internal vector, not a published call
-clockfrq:  dw      4000
+d_lmpsize:  lbr     return              ; deprecated and unnecessary
+            db      0,0,0,0
+            db      0,0,0,0,0,0,0
+shelladdr:  dw      0
+stackaddr:  dw      0
+lowmem:     dw      04000h
+retval:     db      0
+heap:       dw      0
+d_incofs:   lbr     incofs1             ; internal vector, not a published call
+d_append:   lbr     append              ; internal vector, not a published call
+clockfrq:   dw      4000
 
 #define LMPSHIFT 3                     ; these are statically defined now
 #define LMPMASK 0fh
@@ -464,8 +460,7 @@ lmpsecofs: glo     ra                  ; get low byte of lump
 ; ***    RD - File descriptor                  ***
 ; *** Returns: DF=1 - Sector already loaded    ***
 ; ***          DF=0 - Sector not loaded        ***
-;
- ************************************************
+; ************************************************
 
 secloaded: ghi     re                  ; only have to save half
            stxd
@@ -669,7 +664,10 @@ dorawio:   glo     rf                  ; save consumed register
 doidewrt:  sep     scall               ; call bios to read sector
            dw      d_idewrite
 
-rawiorst:  ldn     rd                  ; recover high r8
+rawiorst:  shlc                        ; save bios result with df
+           plo     re
+
+           ldn     rd                  ; recover high r8
            phi     r8
 
            glo     rd                  ; move to current sector
@@ -684,6 +682,9 @@ rawiorst:  ldn     rd                  ; recover high r8
            phi     rf
            ldx
            plo     rf
+
+           glo     re                  ; restore bios result
+           shr
 
            sep     sret                ; return to caller
 
@@ -1544,17 +1545,13 @@ seeknot2:  dec     rd                  ; restore descriptor
            shr
            sep     sret                ; and return to caller
 
-; *************************************
-; *** Open master directory         ***
-; *** Input:   D  - drive number    ***
-; *** Returns: RD - file descriptor ***
-; *************************************
 
-openmd:    sep     scall
-           dw      f_atoi
-           lbdf    error
+         ; Open master directory
+         ;
+         ; Input:   RF - Drive ID (ASCIIZ) pointer
+         ; Returns: RD - File descriptor pointer
 
-           glo     r7                  ; save consumed registers
+openmd:    glo     r7                  ; save consumed registers
            stxd
            ghi     r7
            stxd
@@ -1563,18 +1560,116 @@ openmd:    sep     scall
            ghi     r8
            stxd
 
-           glo     rd                  ; set drive number
+           ldi     0                   ; need to read sector 0
+           plo     r7
+           phi     r7
+           plo     r8
            phi     r8
 
-           ldi     0                   ; need to read sector 0
-           plo     r8
-           phi     r7
-           plo     r7
+
+         ; Try to read the drive identifier as an ASCII decimal number.
+         ; If that succeeds, use it, otherwise we'll treat is as a label.
+
+           sep     scall               ; get drive id if number
+           dw      f_atoi
+           lbnf    mdnumber
+
+
+         ; Since the drive ID is non-numeric, search all the drive system
+         ; sectors for the label that was specified.
+
+mdsearch:  sep     scall               ; read system sector
+           dw      readsys
+
+           ldi     high (dta+104h)     ; pointer to filesystem type
+           phi     rd
+           ldi     low (dta+104h)
+           plo     rd
+
+           ldn     rd                  ; if not type 1 then skip
+           smi     1
+           lbnz    mdskipdr
+
+           ldi     high (dta+12ch+0ch) ; pointer to volume label
+           phi     rd
+           ldi     low (dta+12ch+0ch)
+           plo     rd
+
+           glo     rf                  ; save drive id pointer
+           stxd
+           ghi     rf
+           stxd
+
+
+         ; Compare the identifier to the label on the disk. A successful
+         ; match is terminated with either a zero byte or a slash.
+
+           sex     rf                   ; for sm to compare
+
+mdstrcmp:  lda     rd                   ; get next char, jump if end
+           lbz     mdendstr
+
+           sm                           ; compare char, loop if match
+           inc     rf
+           lbz     mdstrcmp
+
+           lbr     mdnotnam             ; else there is no match
+
+
+mdendstr:  ldn     rf                   ; success if zero or slash
+           lbz     mdfound
+           smi     '/'                
+           lbz     mdfound
+
+           lbr     mdnotnam             ; otherwise fail
+
+
+         ; If the label was found, leave RF pointing to the terminating
+         ; character and fill in the file descriptor.
+
+mdfound:   sex     r2                   ; if match then setup fd
+
+           irx
+           irx
+
+           lbr     mdfillfd
+
+
+         ; If no match, then restore the identifier pointer and loop back
+         ; and check the next drive.
+
+mdnotnam:  sex     r2                   ; else restore id and try again
+
+           irx
+           ldxa
+           phi     rf
+           ldx
+           plo     rf
+
+mdskipdr:  ghi     r8                  ; advance to next drive
+           adi     1
+           phi     r8
+
+           smi     32                  ; if not last drive check next
+           lbnz    mdsearch
+
+           lbr     mdreturn            ; if not found then fail
+
+
+         ; If drive identifier was numeric, then just load the system sector
+         ; from that drive.
+
+mdnumber:  glo     rd                  ; set drive number
+           phi     r8
 
            sep     scall               ; read system sector
            dw      readsys
 
-           ldi     high (mdfildes+18)  ; end of mdfildes, fill downwards
+
+         ; Fill in the file descriptor with the master directory information
+         ; and load the first data sector, the same as if open was called.
+
+mdfillfd:  ldi     high (mdfildes+18)  ; end of mdfildes, fill downwards
            phi     rd
            ldi     low (mdfildes+18)
            plo     rd
@@ -1646,7 +1741,9 @@ openmd:    sep     scall
            sep     scall               ; read first sector
            dw      rawread
 
-           irx                         ; recover used registers
+           adi     0                   ; signal success
+
+mdreturn:  irx                         ; recover used registers
            ldxa
            phi     r8
            ldxa
@@ -1656,7 +1753,6 @@ openmd:    sep     scall
            ldx
            plo     r7
 
-           adi     0
            sep     sret                ; return to caller
 
 
@@ -4403,7 +4499,7 @@ mkdir_go:  ldi     high intfildes      ; temporariy fildes
            ldi     low intfildes
            plo     rd
 
-           ldi     0                   ; no flags
+           ldi     16                  ; open diretories
            plo     r7
 
            glo     rf                  ; save pathname
@@ -5655,7 +5751,7 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:    db     'Elf/OS Classic 4.2.1',10,13
+bootmsg:    db     'Elf/OS Classic 4.3.1',10,13
             db     'Copyright 2004-2021 by Michael H Riley',10,13,0
 prompt:     db     10,13,'Ready',10,13,': ',0
 errnf:      db     'File not found.',10,13,0
