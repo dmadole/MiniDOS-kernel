@@ -91,18 +91,14 @@ o_brktest:  lbr     f_brktest
 o_devctrl:  lbr     deverr
 o_alloc:    lbr     alloc
 o_dealloc:  lbr     dealloc
-o_termctl:  lbr     noopen
+o_termctl:  lbr     error
 o_nbread:   lbr     f_nbread
 o_memctrl:  lbr     deverr
 
-deverr:    ldi     1                   ; error=0, device not found
-           shr                         ; Set df to indicate error
-           sep     sret                ; return to caller
+deverr:    ldi     0
 
-error:     shl                         ; move error over
-           ori     1                   ; signal error condition
-           shr                         ; shift over and set DF
-           sep     sret                ; return to caller
+error:     smi     0
+           sep     sret
 
            org     3d0h                ; reserve some space for users
 user:      db      0
@@ -132,15 +128,7 @@ date:      db      [month],[day]
            dw      [year]
 
 sysfildes: db      0,0,0,0             ; current offset
-           dw      0100h               ; dta
-           dw      0                   ; eof
-           db      0                   ; flags
-           db      0,0,0,0             ; dir sector
-           dw      0                   ; dir offset
-           db      255,255,255,255     ; current sector
-
-mdfildes:  db      0,0,0,0             ; current offset
-           dw      mddta               ; dta
+           dw      dta                 ; dta
            dw      0                   ; eof
            db      0                   ; flags
            db      0,0,0,0             ; dir sector
@@ -154,6 +142,9 @@ intflags:  db      0                   ; flags
            db      0,0,0,0             ; dir sector
            dw      0                   ; dir offset
            db      255,255,255,255     ; current sector
+
+           db      0,0,0,0,0,0,0,0,0,0 ; was mdfildes space
+           db      0,0,0,0,0,0,0,0,0
 
 himem:      dw      0
 d_idereset: lbr    f_idereset          ; jump to bios ide reset
@@ -454,239 +445,243 @@ lmpsecofs: glo     ra                  ; get low byte of lump
            sep     sret                ; return to caller
 
 
-; ************************************************
-; *** Determine if sector is already in buffer ***
-; *** R8:R7 - Request sector                   ***
-; ***    RD - File descriptor                  ***
-; *** Returns: DF=1 - Sector already loaded    ***
-; ***          DF=0 - Sector not loaded        ***
-; ************************************************
 
-secloaded: ghi     re                  ; only have to save half
+
+rawwrite:  glo   r9                     ; preserve work register
+           stxd
+           ghi   r9
            stxd
 
-           glo     rd                  ; save descriptor address
-           adi     18                  ; point to current sector lsb
-           plo     re
-           ghi     rd
-           adci    0                   ; propagate carry
-           phi     re
-
-           sex     re                  ; lsb-to-msb to fail soonest
-           glo     r7
-           sm
-           lbnz    secnot
-
-           dec     re
-           ghi     r7
-           sm
-           lbnz    secnot
-
-           dec     re
-           glo     r8
-           sm
-           lbnz    secnot
-
-           dec     re
-           ghi     r8
-           sm
-           lbz     secyes
-
-secnot:    ldi     0                   ; return df=0
-           lskp
-
-secyes:    ldi     1                   ; return df=1
-           shr
-
-           inc     r2
-           ldn     r2
-           phi     re
-
-           sep     sret                ; return to caller
-
-
-; *****************************************
-; *** See if sector needs to be written ***
-; *** RD - file descriptor              ***
-; *****************************************
-
-checkwrt:
-           glo     rd                  ; need to point to flags
-           adi     8
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
-           ldn     rd                  ; get flags
-
-           shr                         ; shift first bit into DF
-           lbdf    checkwrt1           ; jump if bet was set
-
-           glo     rd                  ; restore descriptor
-           smi     8
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
-
-           sep     sret                ; and return to caller
-
-checkwrt1: glo     r7                  ; save consumed registers
+           glo   rf                     ; preserve work register
            stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
+           ghi   rf
            stxd
 
-           glo     rd                  ; point descripter to current sector
-           adi     7
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
+           glo   rd
+           adi   4
+           plo   r9
+           ghi   rd
+           adci  0
+           phi   r9
 
-           lda     rd                  ; get current sector
-           phi     r8
-           lda     rd
-           plo     r8
-           lda     rd
-           phi     r7
-           lda     rd
-           plo     r7
+           lda   r9                     ; get dta address
+           phi   rf
+           lda   r9
+           plo   rf
 
-           glo     rd                  ; place descriptor back at beginning
-           smi     19
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
+           inc   r9                     ; move to flags
+           inc   r9
 
-           sep     scall               ; write the sector
-           dw      rawwrite
+           ldn   r9                     ; clear dirty flag
+           ani   255-1
+           str   r9
 
-           irx                         ; recover consumed registers
+           glo   rd                     ; point to sector lsb
+           adi   18
+           plo   r9
+           ghi   rd
+           adci  0
+           phi   r9
+
+           sex   r9                     ; so we can use stxd
+
+           glo   r7                     ; fill in sector number
+           stxd
+           ghi   r7
+           stxd
+           glo   r8
+           stxd
+           ghi   r8
+           str   r9
+
+           ori   0e0h                   ; set legacy lba bits
+           phi   r8
+
+           sep   scall                  ; write sector out
+           dw    d_idewrite
+
+           ldn   r9
+           phi   r8
+
+           irx                          ; restore work register
            ldxa
-           phi     r8
+           phi   rf
            ldxa
-           plo     r8
+           plo   rf
+
            ldxa
-           phi     r7
-           ldx
-           plo     r7
+           phi   r9
+           ldxa
+           plo   r9
 
-           sep     sret                ; return to caller
-
-
-; ***************************************
-; *** Write raw sector                ***
-; *** R8:R7 - Sector address to write ***
-; ***    RD - File descriptor         ***
-; ***************************************
-
-rawwrite:  ghi     r8                  ; if msb is 255 then its invalid
-           xri     255
-           lbz     return
-
-rawwrite1: ldi     1
-           plo     re
-
-           lbr     dorawio
+           sep   sret                   ; return
 
 
 
 ; ***************************************
 ; *** Read raw sector                 ***
-; *** R8:R7 - Sector address to write ***
+; *** R8:R7 - Sector address to read  ***
 ; ***    RD - File descriptor         ***
 ; ***************************************
-rawread:   sep     scall               ; see if requested sector is already in
-           dw      secloaded
-           lbdf    return              ; jump if not
 
-           sep     scall               ; see if loaded sector needs writing
-           dw      checkwrt
 
-           ldi     0
-           plo     re
+rawread:    glo   r9
+            stxd
+            ghi   r9
+            stxd
 
-dorawio:   glo     rf                  ; save consumed register
-           stxd
-           ghi     rf
-           stxd
+            glo   rd                    ; save pointer and move to sector
+            adi   18
+            plo   r9
+            ghi   rd
+            adci  0
+            phi   r9
 
-           inc     rd                   ; also point to dta
-           inc     rd
-           inc     rd
-           inc     rd
+            sex   r9                    ; do read if sector lsb different
+            glo   r7
+            sm
+            lbnz  needread
 
-           lda     rd                  ; get dta
-           phi     rf                  ; and place into rf
-           lda     rd
-           plo     rf
+            dec   r9                    ; do read if next lsb different
+            ghi   r7
+            sm
+            lbnz  needread
 
-           inc     rd                  ; point to flags byte
-           inc     rd
+            dec   r9                    ; do read if next msb different
+            glo   r8
+            sm
+            lbnz  needread
 
-           ldn     rd                  ; get flags
-           ani     0feh                ; clear written flag
-           str     rd                  ; and put back
+            dec   r9                    ; do read if msb different
+            ghi   r8
+            sm
+            lbnz  needread
 
-           glo     rd                  ; move to current sector
-           adi     10
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
+            sex   r2
 
-           sex     rd
+            irx                        ; else just restore and return
+            ldxa
+            phi   r9
+            ldx
+            plo   r9
 
-           glo     r7                  ; write current sector into descriptor
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           str     rd
+            sep   sret
 
-           ori     0e0h                ; set legacy lba mode
-           phi     r8
+needread:   sex   r2
 
-           glo     re
-           lbnz    doidewrt
+            glo   rf                   ; save current rf
+            stxd
+            ghi   rf
+            stxd
 
-           sep     scall               ; call bios to read sector
-           dw      d_ideread
-           lbr     rawiorst
+            glo   rd                    ; point to dta
+            adi   4
+            plo   r9
+            ghi   rd
+            adci  0
+            phi   r9
 
-doidewrt:  sep     scall               ; call bios to read sector
-           dw      d_idewrite
+            lda   r9                    ; get dta address
+            phi   rf
+            lda   r9
+            plo   rf
 
-rawiorst:  shlc                        ; save bios result with df
-           plo     re
+            inc   r9                    ; move to flags
+            inc   r9
 
-           ldn     rd                  ; recover high r8
-           phi     r8
+            ldn   r9                    ; if not dirty then don't write
+            ani   1
+            lbz   nodirty
 
-           glo     rd                  ; move to current sector
-           smi     15
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
 
-           irx
-           ldxa                        ; recover consumed registers
-           phi     rf
-           ldx
-           plo     rf
+            ldn   r9                    ; clear dirty flag
+            xri   1
+            str   r9
 
-           glo     re                  ; restore bios result
-           shr
+            glo   r7                    ; save sector to load
+            stxd
+            ghi   r7
+            stxd
+            glo   r8
+            stxd
+            ghi   r8
+            stxd
 
-           sep     sret                ; return to caller
+            glo   rd                    ; move to sector address
+            adi   15
+            plo   r9
+            ghi   rd
+            adci  0
+            phi   r9
+
+            lda   r9                    ; get sector address
+            phi   r8
+            lda   r9
+            plo   r8
+            lda   r9
+            phi   r7
+            lda   r9
+            plo   r7
+            sep   scall                 ; write out current sector
+            dw    d_idewrite
+
+            ghi   rf
+            smi   2
+            phi   rf
+
+            irx                         ; restore sector to read
+            ldxa
+            phi   r8
+            ldxa
+            plo   r8
+            ldxa
+            phi   r7
+            ldx
+            plo   r7
+
+
+
+nodirty:    glo   rd
+            adi   18
+            plo   r9
+            ghi   rd
+            adci  0
+            phi   r9
+
+            sex   r9
+
+            glo   r7
+            stxd
+            ghi   r7
+            stxd
+            glo   r8
+            stxd
+            ghi   r8
+            str   r9
+
+            ori   0e0h
+            phi   r8
+
+            sep   scall
+            dw    d_ideread
+
+            ldn   r9
+            phi   r8
+
+            irx
+            ldxa
+            phi   rf
+            ldxa
+            plo   rf
+
+            ldxa
+            phi   r9
+            ldx
+            plo   r9
+
+            adi   0
+            sep   sret
+
 
 
 ; *************************************
@@ -1546,214 +1541,198 @@ seeknot2:  dec     rd                  ; restore descriptor
            sep     sret                ; and return to caller
 
 
-         ; Open master directory
-         ;
-         ; Input:   RF - Drive ID (ASCIIZ) pointer
-         ; Returns: RD - File descriptor pointer
+          ; Open Master Directory File
+          ;
+          ; Returns DF set if error, otherwise file descriptor RD is open.
+          ;
+          ; Input:   RF - Drive ID (ASCIIZ) pointer
+          ;          RD - File descriptor pointer
 
-openmd:    glo     r7                  ; save consumed registers
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           stxd
+openmd:     glo   r7                     ; save working registers
+            stxd
+            ghi   r7
+            stxd
+            glo   r8
+            stxd
+            ghi   r8
+            stxd
+            glo   r9
+            stxd
+            ghi   r9
+            stxd
+            glo   ra
+            stxd
+            ghi   ra
+            stxd
 
-           ldi     0                   ; need to read sector 0
-           plo     r7
-           phi     r7
-           plo     r8
-           phi     r8
-
-
-         ; Try to read the drive identifier as an ASCII decimal number.
-         ; If that succeeds, use it, otherwise we'll treat is as a label.
-
-           sep     scall               ; get drive id if number
-           dw      f_atoi
-           lbnf    mdnumber
-
-
-         ; Since the drive ID is non-numeric, search all the drive system
-         ; sectors for the label that was specified.
-
-mdsearch:  sep     scall               ; read system sector
-           dw      readsys
-
-           ldi     high (dta+104h)     ; pointer to filesystem type
-           phi     rd
-           ldi     low (dta+104h)
-           plo     rd
-
-           ldn     rd                  ; if not type 1 then skip
-           smi     1
-           lbnz    mdskipdr
-
-           ldi     high (dta+12ch+0ch) ; pointer to volume label
-           phi     rd
-           ldi     low (dta+12ch+0ch)
-           plo     rd
-
-           glo     rf                  ; save drive id pointer
-           stxd
-           ghi     rf
-           stxd
+            ldi   0                     ; sector 0 of drive 0
+            plo   r7
+            phi   r7
+            plo   r8
+            phi   r8
 
 
-         ; Compare the identifier to the label on the disk. A successful
-         ; match is terminated with either a zero byte or a slash.
+          ; Try to read the drive identifier as an ASCII decimal number.
+          ; If that succeeds, use it, otherwise we'll treat is as a label.
 
-           sex     rf                   ; for sm to compare
+            sep   scall                 ; get drive id if number
+            dw    f_atoi
+            lbnf  mdnumber
 
-mdstrcmp:  lda     rd                   ; get next char, jump if end
-           lbz     mdendstr
-
-           sm                           ; compare char, loop if match
-           inc     rf
-           lbz     mdstrcmp
-
-           lbr     mdnotnam             ; else there is no match
+            ldn   rf                    ; if empty then error
+            lbz   mdreturn
+            smi   '/'
+            lbz   mdreturn
 
 
-mdendstr:  ldn     rf                   ; success if zero or slash
-           lbz     mdfound
-           smi     '/'                
-           lbz     mdfound
+          ; Since the drive ID is non-numeric, search all the drive system
+          ; sectors for the label that was specified.
 
-           lbr     mdnotnam             ; otherwise fail
+            ldi   intfildes.1
+            phi   rd
+            ldi   intfildes.0
+            plo   rd
 
+            ldi   high (intdta+100h)    ; pointer to filesystem data
+            phi   r9
 
-         ; If the label was found, leave RF pointing to the terminating
-         ; character and fill in the file descriptor.
+mdsearch:   sep   scall                 ; read system sector
+            dw    rawread
 
-mdfound:   sex     r2                   ; if match then setup fd
+            ldi   low 104h              ; pointer to filesystem type
+            plo   r9
 
-           irx
-           irx
+            ldn   r9                    ; if not type one then skip
+            smi   1
+            lbnz  mdnextdr
 
-           lbr     mdfillfd
+            ldi   low 12ch+0ch          ; pointer to volume label
+            plo   r9
 
-
-         ; If no match, then restore the identifier pointer and loop back
-         ; and check the next drive.
-
-mdnotnam:  sex     r2                   ; else restore id and try again
-
-           irx
-           ldxa
-           phi     rf
-           ldx
-           plo     rf
-
-mdskipdr:  ghi     r8                  ; advance to next drive
-           adi     1
-           phi     r8
-
-           smi     32                  ; if not last drive check next
-           lbnz    mdsearch
-
-           lbr     mdreturn            ; if not found then fail
+            glo   rf                    ; save drive id pointer
+            stxd
+            ghi   rf
+            stxd
 
 
-         ; If drive identifier was numeric, then just load the system sector
-         ; from that drive.
+          ; Compare the identifier to the label on the disk. A successful
+          ; match is terminated with either a zero byte or a slash.
 
-mdnumber:  glo     rd                  ; set drive number
-           phi     r8
+            sex   rf                    ; for sm to compare
 
-           sep     scall               ; read system sector
-           dw      readsys
+mdstrcmp:   lda   r9                    ; get next char, jump if end
+            lbz   mdendstr
+
+            sm                          ; compare char, loop if match
+            inc   rf
+            lbz   mdstrcmp
+
+            lbr   mdnoname              ; else there is no match
 
 
-         ; Fill in the file descriptor with the master directory information
-         ; and load the first data sector, the same as if open was called.
+mdendstr:   ldn   rf                    ; success if zero or slash
+            lbz   mdfound
+            smi   '/'                
+            lbz   mdfound
 
-mdfillfd:  ldi     high (mdfildes+18)  ; end of mdfildes, fill downwards
-           phi     rd
-           ldi     low (mdfildes+18)
-           plo     rd
+            lbr   mdnoname              ; otherwise fail
 
-           sex     rd
 
-           ldi     -1                  ; no currently loaded sector
-           stxd
-           stxd
-           stxd
-           stxd
+          ; If the label was found, leave RF pointing to the terminating
+          ; character and fill in the file descriptor.
 
-           ldi     low 12ch            ; dir offset in system data sector
-           stxd
-           ldi     high 12ch
-           stxd
+mdfound:    sex   r2                    ; if match then setup fd
 
-           ldi     0                   ; address of system data sector
-           stxd
-           stxd
-           stxd
+            irx                         ; discard start of string
+            irx
 
-           ghi     r8                  ; set drive number of system data
-           stxd
+            lbr   mdopener              ; open file descriptor
 
-           ldi     0ch                 ; next flags
-           stxd
 
-           ghi     r8                  ; save drive unmber
-           plo     re
+          ; If no match, then restore the identifier pointer and loop back
+          ; and check the next drive.
 
-           ldi     high (dta+12ch+5)   ; pointer to lsb of master dir eof
-           phi     r8
-           ldi     low (dta+12ch+5)
-           plo     r8
+mdnoname:   sex   r2                    ; else restore id and try again
 
-           ldn     r8                  ; next eof
-           stxd
-           dec     r8
-           ldn     r8
-           stxd
+            irx
+            ldxa
+            phi   rf
+            ldx
+            plo   rf
 
-           ldi     low mddta
-           stxd
-           ldi     high mddta          ; next dta
-           stxd
+mdnextdr:   ghi   r8                    ; advance to next drive
+            adi   1
+            phi   r8
 
-           ldi     0                   ; set current offset to zero
-           stxd
-           stxd
-           stxd
-           str     rd
+            smi   32                    ; if not last drive check next
+            lbnz  mdsearch
 
-           ldi     low (dta+105h)      ; get address of md sector
-           plo     r8
-           ldi     high (dta+105h)
-           phi     r8
+            lbr   mdreturn              ; and return
 
-           lda     r8                  ; get starting sector
-           phi     r7
-           lda     r8
-           plo     r7
-           ldi     0
-           plo     r8
 
-           glo     re                  ; restore drive number
-           phi     r8
+          ; If drive identifier was numeric, then just load the system sector
+          ; from that drive.
 
-           sep     scall               ; read first sector
-           dw      rawread
+mdnumber:   glo   rd                    ; set drive number
+            phi   r8
 
-           adi     0                   ; signal success
+            ldi   intfildes.1
+            phi   rd
+            ldi   intfildes.0
+            plo   rd
 
-mdreturn:  irx                         ; recover used registers
-           ldxa
-           phi     r8
-           ldxa
-           plo     r8
-           ldxa
-           phi     r7
-           ldx
-           plo     r7
+            sep   scall                 ; read system sector
+            dw    rawread
 
-           sep     sret                ; return to caller
+
+          ; Fill in the file descriptor with the master directory information
+          ; and load the first data sector, the same as if open was called.
+
+mdopener:   ldi   low 12ch              ; dir offset in system data sector
+            plo   r9 
+            ldi   high 12ch
+            phi   r9
+
+            glo   rf
+            stxd
+            ghi   rf
+            stxd
+
+            ldi   low (intdta+12ch)
+            plo   rf
+            ldi   high (intdta+12ch)
+            phi   rf
+
+            sep   scall                 ; read first sector
+            dw    setupfd
+
+            irx
+            ldxa
+            phi   rf
+            ldx
+            plo   rf
+
+            adi   0                     ; signal success
+
+mdreturn:   irx                         ; recover used registers
+            ldxa
+            phi   ra
+            ldxa
+            plo   ra
+            ldxa
+            phi   r9
+            ldxa
+            plo   r9
+            ldxa
+            phi   r8
+            ldxa
+            plo   r8
+            ldxa
+            phi   r7
+            ldx
+            plo   r7
+
+            sep   sret                  ; return to caller
 
 
 ; **************************************
@@ -2861,133 +2840,154 @@ reterror:  shr
            sep     sret
 
        
-; **************************************
-; *** Close a file                   ***
-; *** RD - file descriptor           ***
-; *** Returns: DF=0 - success        ***
-; ***          DF=1 - error          ***
-; ***                 D - Error code ***
-; **************************************
-close:     sep     scall               ; make sure FILDES is valid
-           dw      chkvld
-           lbnf    closego             ; jump if good
+          ; Close a file
+          ;
+          ; Input:
+          ;   RD - file descriptor
+          ; Returns:
+          ;   DF - set if error
 
-           ldi     1                   ; otherwise signal error
-           shr
-           ldi     2                   ; invalid FILDES error
-           sep     sret                ; return to caller
+close:      glo   rd                    ; point rd to fildes flags
+            adi   8
+            plo   rd
+            ghi   rd
+            adci  0
+            phi   rd
 
-closego:   sep     scall               ; see if sector needs to be written
-           dw      checkwrt
+            ldn   rd                    ; if not open and written to
+            ani   16+8
+            smi   16+8
+            lbnf  clearflg
 
-           glo     rd                  ; point to flags byte
-           adi     8
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
 
-           ldn     rd                  ; get flags byte
-           ani     16                  ; see if file was written to
-           lbnz    close1              ; jump if so
+          ; Since the file is open and has been written to, update the EOF
+          ; count and the date and time in it's directory entry.
 
-closeex:   glo     rd                  ; restore descriptor
-           smi     8
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
+            glo   r9                    ; save working registers
+            stxd
+            ghi   r9
+            stxd
+            glo   r8
+            stxd
+            ghi   r8
+            stxd
+            glo   r7
+            stxd
+            ghi   r7
+            stxd
 
-           ldi     0                   ; signal no error
-           shr
-           sep     sret                ; return to caller
+            inc   rd                    ; skip flags
 
-close1:    inc     rd                  ; point to dir sector
+            lda   rd                    ; get sector of directory entry
+            phi   r8
+            lda   rd
+            plo   r8
+            lda   rd
+            phi   r7
+            lda   rd
+            plo   r7
 
-           glo     r7                  ; save consumed registers
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           stxd
-           glo     r9
-           stxd
-           ghi     r9
-           stxd
+            lda   rd                    ; push offset of directory entry
+            stxd
+            lda   rd
+            stxd
 
-           lda     rd                  ; retrieve dir sector
-           phi     r8
-           lda     rd
-           plo     r8
-           lda     rd
-           phi     r7
-           lda     rd
-           plo     r7
+            glo   rd                    ; back to beginning of fildes
+            smi   15
+            plo   rd
+            ghi   rd
+            smbi  0
+            phi   rd
 
-           sep     scall               ; read the sector
-           dw      readsys
 
-           lda     rd                  ; get dir offset high byte
-           stxd                        ; place into memory
-           lda     rd                  ; get low byte
-           str     r2                  ; and keep for add
+          ; Note that before rawread loads the directory sector, it will
+          ; automatically flush the buffer data first if it's dirty.
 
-           ldi     low dta             ; get system dta
-           add                         ; add in diroffset
-           plo     r9
-           irx                         ; point to high byte of offset
-           ldi     high dta
-           adc
-           phi     r9                  ; r9 now has dir offset
+            sep   scall                 ; read in directory sector
+            dw    rawread
 
-           inc     r9                  ; point to eof field
-           inc     r9
-           inc     r9
-           inc     r9
+            inc   rd                    ; point to dta address
+            inc   rd
+            inc   rd
+            inc   rd
 
-           glo     rd                  ; move descriptor to eof field
-           smi     9 
-           plo     rd
-           ghi     rd
-           smbi    0
-           phi     rd
+            inc   rd                    ; add dta address to offset
+            ldn   rd
+            irx
+            add
+            plo   r9
+            dec   rd
+            lda   rd
+            irx
+            adc
+            phi   r9
+            inc   rd
 
-           lda     rd                  ; get high byte of eof
-           str     r9                  ; store into dir entry
-           inc     r9
-           lda     rd 
-           str     r9
-           inc     r9
 
-           ldn     r9                  ; get flags
-           ori     ff_archive          ; set archive bit
-           str     r9                  ; and write it back
+          ; R9 now points to the entry within the loaded directory sector.
+          ; Update the flags, EOF, and date and time into the buffer.
 
-           inc     r9                  ; move past flags
+            inc   r9                    ; skip file allocation unit
+            inc   r9
+            inc   r9
+            inc   r9
 
-           sep     scall               ; get current date/time
-           dw      gettmdt
+            lda   rd                    ; update eof count into entry
+            str   r9
+            inc   r9
+            lda   rd
+            str   r9
+            inc   r9
 
-           sep     scall               ; write the sector back
-           dw      writesys
+            ldn   r9                    ; set archve bit on file
+            ori   ff_archive
+            str   r9
+            inc   r9
 
-           irx                         ; recover consumed registers
-           ldxa
-           phi     r9
-           ldxa
-           plo     r9
-           ldxa
-           phi     r8
-           ldxa
-           plo     r8
-           ldxa
-           phi     r7
-           ldx
-           plo     r7
+            sep   scall                 ; get current date/time
+            dw    gettmdt
 
-           lbr     closeex             ; and exit
+
+          ; Clear the file descriptor flags and point back to the start of
+          ; the descriptor, then write the diretory sector back out.
+
+            sep   scall                 ; clear flags and reset pointer
+            dw    clearflg
+
+            sep   scall                 ; write updated directory entry
+            dw    rawwrite
+
+            irx                         ; restore modified registers
+            ldxa
+            phi   r7
+            ldxa
+            plo   r7
+            ldxa
+            phi   r8
+            ldxa
+            plo   r8
+            ldxa
+            phi   r9
+            ldx
+            plo   r9
+
+            sep   sret                  ; return result of rawrite
+
+
+          ; RD points to the flags byte; clear it, reset RD to the start of
+          ; the file descriptor, then return.
+
+clearflg:   ldi   0
+            str   rd
+
+            glo   rd
+            smi   8
+            plo   rd
+            ghi   rd
+            smbi  0
+            phi   rd
+
+            sep   sret
 
 
 ; **********************************
@@ -3129,134 +3129,112 @@ searchex:  shr
            sep     sret                ; return to caller
 
 
-; Setup new file descriptor
-;
-; Input:
-;   R8:R7 - Directory entry sector
-;   R9 - Directory entry offset
-;   RD - File descriptor to setup
-;   RF - Pointer to directory entry
-;
-; Output:
-;   R8 - Modified
-;   R7 - Modified
-;   R9 - Modified
-;   RA - Modified
-;   RD - File descriptor unchanged
-;   RF - Modified
+          ; Setup new file descriptor
+          ;
+          ; Input:
+          ;   R8:R7 - Directory entry sector
+          ;   R9 - Directory entry offset
+          ;   RD - File descriptor to setup
+          ;   RF - Pointer to directory entry
+          ;
+          ; Output:
+          ;   R7 - Modified
+          ;   R8 - Modified
+          ;   R9 - Modified
+          ;   RA - Modified
+          ;   RD - File descriptor unchanged
+          ;   RF - Modified
 
-setupfd:   glo     rd                  ; move pointer to fill downwards
-           adi     14
-           plo     rd
-           ghi     rd
-           adci    0
-           phi     rd
+setupfd:    glo   rd                    ; move pointer to fill downwards
+            adi   18.0
+            plo   rd
+            ghi   rd
+            adci  18.1
+            phi   rd
 
-           sex     rd                  ; to use stxd to fill
+            sex   rd                    ; to use stxd to fill
 
-           glo     r9                  ; set directory entry offset
-           stxd
-           ghi     r9
-           stxd
+            ldi   -1                    ; clear loaded sector
+            stxd
+            stxd
+            stxd
+            stxd
 
-           glo     r7                  ; set directory entry sector
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           stxd
+            glo   r9                    ; set directory entry offset
+            stxd
+            ghi   r9
+            stxd
 
-           inc     rf                  ; skip msbs in starting lump
-           inc     rf
+            glo   r7                    ; set directory entry sector
+            stxd
+            ghi   r7
+            stxd
+            glo   r8
+            stxd
+            ghi   r8
+            stxd
 
-           lda     rf                  ; get 16-bit starting lump
-           phi     ra
-           lda     rf
-           plo     ra
+            inc   rf                    ; skip msbs in starting lump
+            inc   rf
 
-           lda     rf                  ; get eof from directory entry
-           phi     r9
-           lda     rf
-           plo     r9
+            lda   rf                    ; get 16-bit starting lump
+            phi   ra
+            lda   rf
+            plo   ra
 
-           sep     scall               ; convert lump to starting sector
-           dw      lumptosec
+            lda   rf                    ; get eof from directory entry
+            phi   r9
+            lda   rf
+            plo   r9
 
-           sep     scall               ; lookup next lump in file
-           dw      readlump
+            sep   scall                 ; convert lump to starting sector
+            dw    lumptosec
 
-           sex     rd                  ; set again since scall reset
+            sep   scall                 ; lookup next lump in file
+            dw    readlump
 
-           ghi     ra                  ; if not last lump set flags to 8
-           smi     0feh
-           lbnz    noteof
+            sex   rd                    ; set again since scall reset
 
-           glo     ra                  ; if last lump set flags to 8+4
-           smi     0feh
-           lbz     goteof
+            ghi   ra                    ; if not last lump set flags to 8
+            smi   0feh
+            lbnz  noteof
 
-noteof:    ldi     4                   ; compute flags value into fd
-goteof:    xri     4+8
-           str     rd
+            glo   ra                    ; if last lump set flags to 8+4
+            smi   0feh
+            lbz   goteof
 
-           ldn     rf                  ; get flags from directory entry,
-           shrc                        ;  move low 3 bits to high 3 bits
-           shrc
-           shrc
-           shrc
+noteof:     ldi   4                     ; compute flags value into fd
+goteof:     xri   4+8
+            str   rd
 
-           ani     0e0h                ; mask high 3 bits and combine with
-           or                          ;  bits already in fd flags
-           stxd
+            ldn   rf                    ; get flags from directory entry,
+            shrc                        ;  move low 3 bits to high 3 bits
+            shrc
+            shrc
+            shrc
 
-           glo     r9                  ; save eof offset into fd
-           stxd
-           ghi     r9
-           stxd
+            ani   0e0h                  ; mask high 3 bits and combine with
+            or                          ;  bits already in fd flags
+            stxd
 
-           ldn     rd                  ; get dta address
-           plo     rf
-           dec     rd
-           ldn     rd
-           phi     rf
-           dec     rd
+            glo   r9                    ; save eof offset into fd
+            stxd
+            ghi   r9
+            stxd
 
-           ldi     0                   ; set current offset to zero
-           stxd
-           stxd
-           stxd
-           str     rd
+            dec   rd                    ; skip dta address
+            dec   rd
 
-           glo     rd                  ; get pointer to loaded sector
-           adi     18
-           plo     r9
-           ghi     rd
-           adci    0
-           phi     r9
+            ldi   0                     ; set current offset to zero
+            stxd
+            stxd
+            stxd
+            str   rd
 
-           sex     r9                  ; to use stxd to fill downward
+            sep   scall                 ; load first sector
+            dw    rawread
 
-           glo     r7                  ; fill in loaded sector
-           stxd
-           ghi     r7
-           stxd
-           glo     r8
-           stxd
-           ghi     r8
-           str     r9
-
-           ori     0e0h                ; set lba mode
-           phi     r8
-
-           sep     scall               ; load first sector
-           dw      d_ideread
-
-           ldn     r9
-           phi     r8
-
-           sep     sret                 ; return
+            sep   sret                   ; return
 
 
 ; ***************************************
@@ -3936,7 +3914,7 @@ gotdir:    ldi     high scratch        ; setup scratch area
 
            ldx                         ; get flags, check if allow directory
            ani     16                  ; is set
-           lbz     openerr
+           lbz     opencls
 
 dirok:     ldx                         ; get flags
            stxd                        ; and keep on stack
@@ -4043,6 +4021,9 @@ newfile:   irx                         ; recover flags
            ani     1                   ; see if create is allowed
            lbnz    allow               ; allow the create
 
+opencls:   sep     scall               ; close directory
+           dw      close
+
 openerr:   ldi     1                   ; need to signal an error
            shr
 
@@ -4093,7 +4074,7 @@ allow2:    glo     rb                  ; save filename address
            ldi     0                   ; clear d and return
            lbr     openexit
 
-noopen:    smi     0                   ; signal file not opened
+           smi     0                   ; signal file not opened
            sep     sret                ; and return
 
            
@@ -4130,8 +4111,10 @@ delete:
            stxd
            ghi     rc
            stxd
+
            sep     scall               ; find directory
            dw      finddir
+
            ldi     high scratch        ; setup scrath area
            phi     rf
            ldi     low scratch
@@ -4721,11 +4704,12 @@ chdir:     ldn     rf                  ; get first byte of pathname
            lbz     chdirlp
 
            inc     ra
-           inc     ra
-           inc     ra
+
+chdirlp3:  lda     ra
+           smi     '/'
+           lbnz    chdirlp3
 
            lbr     chdirlp
-
 
 chdirlp2:  lda     ra                  ; find way to end of path
            lbnz    chdirlp2
@@ -5086,15 +5070,16 @@ cmdlp:     ldi      high prompt          ; get address of prompt into R6
            ldi      low (sysfildes+15)
            plo      rc
 
-flushlp:   ldi      255
+           ldi      255
            str      rc
 
-           glo      rc
-           adi      19
+           ldi      high (intfildes+15)
+           phi      rc
+           ldi      low (intfildes+15)
            plo      rc
 
-           smi      low (intfildes+15)
-           lbnf     flushlp
+           ldi      255
+           str      rc
 
            lbr      cmdlp
 
@@ -5766,9 +5751,8 @@ defpath:    db     '//0/',0
          #error Kernel size overflow
          #endif
 
-           org     1be0h
+           org     1de0h
 
 scratch:   ds      32
 intdta:    ds      512
-mddta:     ds      512
 
