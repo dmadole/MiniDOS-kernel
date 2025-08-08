@@ -137,7 +137,7 @@ iserve:     dec   r2
 ivec:       dw    intret
 
             org   400h
-version:    db    4,3,4
+version:    db    4,3,6
 
 build:      dw    [build]
 
@@ -342,7 +342,7 @@ writelump:  glo   r3                    ; common initialization code
             str   r9
 
             sep   scall                 ; write sector back either way
-            dw    rawwrite
+            dw    rawrite
 
             glo   rf                     ; if we are freeing a lump
             bnz   sretlump
@@ -404,7 +404,7 @@ lumploop:   sep   scall
             bnz   lumploop
 
             sep   scall                 ; write last sector to disk
-            dw    rawwrite
+            dw    rawrite
 
           ; br    sretlump              ; call through to return
 
@@ -487,130 +487,142 @@ sectolmp1:  glo   r7                  ; shift left to multiply
             sep   sret                ; return
 
 
+          ; -------------------------------------------------------------------
+          ; RAWRITE: Writes sector data from a file descriptor buffer.
+          ;
+          ;   R8:R7 -- Sector to write (unchanged)
+          ;   RD    -- File descriptor (unchanged)
+          ;   DF    -- Set at return if error
+          ;
+          ; Note that this writes the sector to disk regardless of whether it
+          ; is marked as being modified in the flags byte. It does clear the
+          ; flag if it is set, though.
 
-
-rawwrite:   glo   r9                    ; preserve work register
+rawrite:    glo   r9                    ; free register for fildes pointer
             stxd
             ghi   r9
             stxd
 
-            glo   rf                    ; preserve work register
+            glo   rf                    ; free register for buffer pointer
             stxd
             ghi   rf
             stxd
 
-            glo   rd
+            glo   rd                    ; get pointer to buffer address
             adi   4
             plo   r9
             ghi   rd
             adci  0
             phi   r9
 
-            lda   r9                    ; get dta address
+            lda   r9                    ; get the data buffer address
             phi   rf
             lda   r9
             plo   rf
 
-            inc   r9                    ; move to flags
+            ghi   r8                    ; set for backwards ide compatibility
+            ori   255-31 
+            phi   r8
+
+            sep   scall                 ; write sector out to disk
+            dw    d_idewrite
+
+            ghi   r8                    ; restore original disk unit
+            ani   31
+            phi   r8
+
+            lbdf  writret               ; do not update fildes if error
+
+            inc   r9                    ; move to the flags byte
             inc   r9
 
-            ldn   r9                    ; clear dirty flag
+            ldn   r9                    ; clear the modified data flag
             ani   255-1
             str   r9
 
-            glo   rd                    ; point to sector lsb
+            glo   rd                    ; point to sector address lsb
             adi   18
             plo   r9
             ghi   rd
             adci  0
             phi   r9
 
-            sex   r9                    ; so we can use stxd
-
-            glo   r7                    ; fill in sector number
+            sex   r9                    ; update sector address in fildes
+            glo   r7
             stxd
             ghi   r7
             stxd
             glo   r8
             stxd
             ghi   r8
-            str   r9
+            stxd
 
-            ori   0e0h                  ; set legacy lba bits
-            phi   r8
-
-            sep   scall                 ; write sector out
-            dw    d_idewrite
-
-            ldn   r9
-            phi   r8
-
-            irx                         ; restore work register
-            ldxa
+writret:    inc   r2                    ; restore buffer pointer register
+            lda   r2
             phi   rf
-            ldxa
+            lda   r2
             plo   rf
 
-            ldxa
+            lda   r2                    ; restore fildes pointer register
             phi   r9
-            ldx
+            ldn   r2
             plo   r9
 
             sep   sret                  ; return
 
 
+          ; -------------------------------------------------------------------
+          ; RAWREAD: Reads sector data into a file descriptor buffer.
+          ;
+          ;   R8:R7 -- Sector to read (unchanged)
+          ;   RD    -- File descriptor (unchanged)
+          ;   DF    -- Set at return if error
+          ;
+          ; If the same sector is already loaded, does not perform the read.
+          ; If the sector in the buffer has been modified since it was loaded,
+          ; write the modified data back first before loading the new sector.
 
-; ***************************************
-; *** Read raw sector                 ***
-; *** R8:R7 - Sector address to read  ***
-; ***    RD - File descriptor         ***
-; ***************************************
-
-rawread:    glo   r9
+rawread:    glo   r9                    ; free working pointer register
             stxd
             ghi   r9
             stxd
 
-            glo   rd                    ; save pointer and move to sector
+            glo   rd                    ; get copy of pointer to sector
             adi   18
             plo   r9
             ghi   rd
             adci  0
             phi   r9
 
+          ; Note that the above clears DF since a file descriptor will never
+          ; wrap around the end of memory. The code below all preserves DF
+          ; clear by using XOR so that it is still clear if we LBR READRET.
+
             sex   r9                    ; do read if sector lsb different
             glo   r7
-            sm
-            lbnz  needread
+            xor
+            lbnz  readsec
 
-            dec   r9                    ; do read if next lsb different
+            dec   r9                    ; do read if sector middle different
             ghi   r7
-            sm
-            lbnz  needread
+            xor
+            lbnz  readsec
 
-            dec   r9                    ; do read if next msb different
+            dec   r9                    ; do read if sector msb different
             glo   r8
-            sm
-            lbnz  needread
+            xor
+            lbnz  readsec
 
-            dec   r9                    ; do read if msb different
+            dec   r9                    ; if drive is the same, return success
             ghi   r8
-            sm
-            lbnz  needread
+            xor
+            lbz   readret
 
-            sex   r2
+          ; Requesting a different sector than already loaded, need to read.
 
-            irx                        ; else just restore and return
-            ldxa
-            phi   r9
-            ldx
-            plo   r9
+readsec:    sex   r2                    ; reset sp
 
-            sep   sret
-
-needread:   sex   r2
-
-            glo   rf                   ; save current rf
+            glo   rf                    ; save current rf
             stxd
             ghi   rf
             stxd
@@ -630,16 +642,14 @@ needread:   sex   r2
             inc   r9                    ; move to flags
             inc   r9
 
-            ldn   r9                    ; if not dirty then don't write
-            ani   1
-            lbz   nodirty
+          ; If the sector already in the buffer has been modified since it was
+          ; loaded, write the modified data back to disk first.
 
+            ldn   r9                    ; if not modified then don't write
+            shr
+            lbnf  nodirty
 
-            ldn   r9                    ; clear dirty flag
-            xri   1
-            str   r9
-
-            glo   r7                    ; save sector to load
+            glo   r7                    ; save sector that was requested
             stxd
             ghi   r7
             stxd
@@ -648,32 +658,28 @@ needread:   sex   r2
             ghi   r8
             stxd
 
-            glo   rd                    ; move to sector address
+            glo   rd                    ; move to loaded sector address
             adi   15
             plo   r9
             ghi   rd
             adci  0
             phi   r9
 
-            lda   r9                    ; get sector address
-            ori   0e0h
+            lda   r9                    ; get the loaded sector drive
+            ori   255-31
             phi   r8
 
-            lda   r9
+            lda   r9                    ; get the loaded sector address
             plo   r8
             lda   r9
             phi   r7
-            lda   r9
+            ldn   r9
             plo   r7
 
-            sep   scall                 ; write out current sector
+            sep   scall                 ; write out the current sector
             dw    d_idewrite
 
-            ghi   rf
-            smi   2
-            phi   rf
-
-            irx                         ; restore sector to read
+            irx                         ; restore sector address to load
             ldxa
             phi   r8
             ldxa
@@ -683,17 +689,50 @@ needread:   sex   r2
             ldx
             plo   r7
 
+            lbdf  readerr               ; abort if a write error occurred
 
+          ; Note that the data modified flag is only cleared if the write
+          ; succeeded. It's possible it might succeed if tried again later.
 
-nodirty:    glo   rd
+            glo   rd                    ; get pointer to flags byte
+            adi   8
+            plo   r9
+            ghi   rd
+            adci  0
+            phi   r9
+
+            ldn   r9                    ; clear the data modified flag
+            ani   255-1
+            str   r9
+
+            ghi   rf                    ; reset buffer pointer to start
+            smi   2
+            phi   rf
+
+          ; Finally, read the new sector data and update the drive and address
+          ; of the loaded sector in the file descriptor.
+
+nodirty:    ghi   r8                    ; set for backwards compatibility
+            ori   255-31
+            phi   r8
+
+            sep   scall                 ; read data from disk to buffer
+            dw    d_ideread
+
+            ghi   r8
+            ani   31
+            phi   r8
+
+            lbdf  readerr
+
+            glo   rd                    ; get pointer to sector address
             adi   18
             plo   r9
             ghi   rd
             adci  0
             phi   r9
 
-            sex   r9
-
+            sex   r9                    ; update sector drive and address
             glo   r7
             stxd
             ghi   r7
@@ -701,30 +740,21 @@ nodirty:    glo   rd
             glo   r8
             stxd
             ghi   r8
-            str   r9
+            stxd
 
-            ori   0e0h
-            phi   r8
-
-            sep   scall
-            dw    d_ideread
-
-            ldn   r9
-            phi   r8
-
-            irx
-            ldxa
+readerr:    inc   r2                    ; restore from buffer pointer use
+            lda   r2
             phi   rf
-            ldxa
+            ldn   r2
             plo   rf
 
-            ldxa
+readret:    inc   r2
+            lda   r2                    ; restore from fildes pointer use
             phi   r9
-            ldx
+            ldn   r2
             plo   r9
 
-            adi   0
-            sep   sret
+            sep   sret                  ; return with status in df
 
 
 
@@ -1020,6 +1050,8 @@ seekzero:   ghi   r8                    ; out of range including negative
             ghi   r8                    ; update new into descrptor
             str   rd
 
+            sex   r2
+
 
           ; Depending on sign of the result, determine how to handle, whether
           ; seeking backwards or forwards of the current allocation unit.
@@ -1080,13 +1112,6 @@ seekback:   ghi   r8                    ; au count to seek forward * 16
 
           ; Need to get the first AU of the file to know where to seek from.
 
-            sep   scall
-            dw    getfirst
-
-            lbr   seekfrom
-
-
-
 getfirst:   glo   rd                    ; get pointer to dir sector
             adi   9
             plo   r9
@@ -1137,7 +1162,7 @@ getfirst:   glo   rd                    ; get pointer to dir sector
             ldn   r9
             plo   ra
 
-            sep   sret
+            lbr   seekfrom
 
 
 
@@ -1605,7 +1630,7 @@ fillnext:   ldi   (sysfildes+8).1
 
 
             sep   scall
-            dw    rawwrite
+            dw    rawrite
 
             irx
             ldxa
@@ -1736,6 +1761,7 @@ isnumber:   ghi   rd                    ; if 256 or more then error
 
             sep   scall                 ; read system sector
             dw    rawread
+            lbdf  mdreturn
 
             ghi   rf                    ; save pointer to terminator
             phi   rb
@@ -2337,7 +2363,7 @@ getnext2:   glo   r7                    ; save consumed registers
             plo   r7
 
             sep   scall
-            dw    rawwrite
+            dw    rawrite
 
             inc   r7                    ; increment sector
 
@@ -3264,7 +3290,7 @@ close:      glo   rd                    ; point rd to fildes flags
             dw    clearflg
 
             sep   scall                 ; write updated directory entry
-            dw    rawwrite
+            dw    rawrite
 
             irx                         ; restore modified registers
             ldxa
@@ -4629,7 +4655,7 @@ delgo:     ldn     r9                  ; retrieve it
            str     r9
 
            sep     scall               ; write dir sector back
-           dw      rawwrite
+           dw      rawrite
 
            sep     scall               ; delete the chain
            dw      delchain
@@ -4688,7 +4714,7 @@ renfile:   sep     scall               ; read directory sector for file
            lbnf    delfail
 
            sep     scall               ; write dir sector back
-           dw      rawwrite
+           dw      rawrite
 
            ldi     0                   ; signal success
 
@@ -5330,48 +5356,130 @@ viewdirlp: lda     ra                  ; get byte from current dir
            sep     sret                ; and return to caller
            
 
+
+
+strloop:   inc   rd
+
+instrcpy:  lda   r6
+           str   rd
+           bnz   strloop
+
+           sep   sret
+
          ; -------------------------------------------------------------------
 
-kinit:     ldi     path.1              ; set path
+         ; Start by building the default current directory location into the
+         ; the PATH variable so it is the boot drive as saved by COLDBOOT.
+
+kinit:     ldi     bootdrv.1           ; point to saved boot disk number
+           phi     rf
+           ldi     bootdrv.0
+           plo     rf
+
+           ldn     rf                  ; get boot disk and extend to 16 bits
+           plo     rd
+           ldi     0
+           phi     rd
+
+           ldi     path.1              ; get pointer to current directory
            phi     rf
            ldi     path.0
            plo     rf
 
-           ldi     defpath.1
-           phi     rc
-           ldi     defpath.0
-           plo     rc
-
-pathlp:    lda     rc
+           ldi     '/'                 ; start the path with '//'
            str     rf
            inc     rf
-           lbnz    pathlp
+           str     rf
+           inc     rf
+
+           sep     scall               ; convert to decimal string
+           dw      f_intout
+
+           ldi     '/'                 ; add trailing slash
+           str     rf
+           inc     rf
+
+           ldi     0                   ; and zero terminate
+           str     rf
+
+         ; Next set DEFDIR to the /bin/ directory path on the boot disk by
+         ; copying the current directory path and appending to it.
+
+           ldi     path.1              ; copy from the current path
+           phi     rf
+           ldi     path.0
+           plo     rf
+
+           ldi     defdir.1            ; copy into default directory
+           phi     rd
+           ldi     defdir.0
+           plo     rd
+
+           sep     scall               ; first copy the current path
+           dw      f_strcpy
+
+           sep     scall               ; then append directory to it
+           dw      instrcpy
+           db      'bin/',0
+
+         ; Finally set INITPRG to /bin/init path under the boot disk by
+         ; copying DEFDIR and appending to it.
+
+           ldi     defdir.1            ; copy from the default exec directory
+           phi     rf
+           ldi     defdir.0
+           plo     rf
+
+           ldi     initprg.1           ; copy to the init program path
+           phi     rd
+           ldi     initprg.0
+           plo     rd
+
+           sep     scall               ; first copy the exec directory path
+           dw      f_strcpy
+
+           sep     scall               ; then append init name to it
+           dw      instrcpy
+           db      'init',0
+
+         ; Initialize the disk data tables and flush the sector buffers.
 
            sep     scall
            dw      flush
+
+         ; Allocate the stack on the heap. Not sure how this plays if KINIT
+         ; is called again after the kernel is already initialized. I guess
+         ; worst case, the old stack gets abandoned on the heap. We'll leave
+         ; the existing behavior alone for now.
 
            ldi     252.0               ; want to allocate 252 bytes on the heap
            plo     rc
            ldi     252.1
            phi     rc
+
            ldi     4.0                 ; allocate as a permanent block
            plo     r7
            ldi     4.1
            phi     r7
+
            sep     scall               ; allocate the memory
            dw      o_alloc
+
            ldi     (stackaddr+1).0     ; point to allocation pointer
            plo     r7
            ldi     (stackaddr+1).1
            phi     r7
+
            ldi     1                   ; mark interrupts enabled
            lsie                        ; skip if interrupts are enabled
            ldi     0                   ; mark interrupts disabled
            plo     re                  ; save IE flag
+
            ldi     023h                ; setup for DIS
            str     r2
            dis                         ; disable interrupts
            dec     r2
+
            glo     rf                  ; SP needs to be end of heap block
            adi     251
            str     r7                  ; write to pointer
@@ -5381,14 +5489,17 @@ pathlp:    lda     rc
            adci    0
            str     r7
            phi     r2
+
            glo     re                  ; recover IE flag
            lbz     kinit2              ; jump if interrupts disabled
            ldi     023h                ; setup for RET
            str     r2
            ret                         ; re-enable interrupts
            dec     r2
+
 kinit2:    dec     r2                  ; need 2 less
            dec     r2
+
            sep     sret                ; return to caller
 
 
@@ -5454,34 +5565,68 @@ coldboot:  ldi     start.1             ; get return address for setcall
            dec     r2
            phi     r2
 
-           lbr     o_initcall          ; setup call and return
+           lbr     o_initcall          ; setup call and return pointers
 
-start:     sep     scall               ; get free memory
-           dw      f_freemem
+         ; We can now boot from drives other than zero. To do this, we need
+         ; to know which drive is the boot drive, so that we can set the
+         ; initial working directory and other paths correctly. The drive
+         ; is passed in R8.1 by boot loaders that know this convention.
+         ;
+         ; For legacy boot loaders, which only support booting from drive
+         ; zero, R8.1 should be set to 0xE0 (drive zero) anyway, from the
+         ; boot loader's call to F_IDEREAD to load the kernel to memory.
+         ;
+         ; So that it's possible to call KINIT again later, which resets the
+         ; current directory, we will save the drive here for later use. But
+         ; we only save it the first time COLDBOOT is called so that it too
+         ; can be called again later without needing R8.1 set first.
 
-           ldi     0                   ; put end of heap marker
+start:     ldi     coldini.1            ; pointer to first cold boot flag
+           phi     rf
+           ldi     coldini.0
+           plo     rf
+
+           ldn     rf                   ; skip if we have already set drive
+           lbnz    skipdrv
+
+           ghi     rf                   ; mark that we've already done it
+           str     rf
+           inc     rf
+
+           ghi     r8                   ; and store the boot drive number
+           ani     %11111
            str     rf
 
-           ldi     heap.1
+         ; Get the end of memory from BIOS, create the empty heap under it,
+         ; and set the HEAP and HIMEM pointers accordingly.
+
+skipdrv:   sep     scall               ; get pointer to last byte of memory
+           dw      f_freemem
+
+           ldi     heap.1              ; pointer to start of heap variable
            phi     r7
            ldi     heap.0
            plo     r7
 
-           ghi     rf                  ; store highest memory address
-           str     r7                  ; and store it
+           ghi     rf                  ; set heap to highest memory address
+           str     r7
            inc     r7
            glo     rf
            str     r7
 
-           ldi     himem.0
+           ldi     0                   ; put end of heap marker into heap
+           str     rf
+           dec     rf
+
+           ldi     himem.0             ; pointer to end of static memory
            plo     r7
 
-           dec     rf                  ; himem is heap-1
-           ghi     rf                  ; store highest memory address
-           str     r7                  ; and store it
+           ghi     rf                  ; initialize to just below the heap
+           str     r7
            inc     r7
            glo     rf
            str     r7
+
 
            sep     scall               ; call rest of kernel setup
            dw      kinit
@@ -6245,13 +6390,27 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:    db     'Mini/DOS 4.3.4',10,13
+bootmsg:    db     'Mini/DOS 4.3.6',10,13
             db     'Visit github.com/dmadole/MiniDOS',10,13,0
 prompt:     db     10,13,'Ready',10,13,': ',0
 errnf:      db     'File not found.',10,13,0
-initprg:    db     '//0/bin/init',0
-defdir:     db     '//0/bin/',0
-defpath:    db     '//0/',0
+
+          ; These paths are overwritten by KINIT with the correct boot drive
+          ; number. Include two digits here so enough space is allocated.
+
+initprg:    db     '//31/bin/init',0
+defdir:     db     '//31/bin/',0
+
+          ; BOOTDRV holds the boot drive that is passed in R8.1 into COLDBOOT
+          ; so KINIT can retrieve it later. Maybe this becomes a published
+          ; variable at some point, but for now it is private.
+          ;
+          ; COLDINI is used to make note when we do this so that it only 
+          ; happens on the first call to COLDBOOT for backwards compatibility.
+          ; Keep the both of these variables adjacent and in this order.
+
+coldini:    db     0
+bootdrv:    db     0
 
 
          #if $>1d20h
