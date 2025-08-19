@@ -137,7 +137,7 @@ iserve:     dec   r2
 ivec:       dw    intret
 
             org   400h
-version:    db    4,3,6
+version:    db    4,3,7
 
 build:      dw    [build]
 
@@ -958,25 +958,26 @@ au2off:     glo   rb                   ; multiply count of aus by 4096/256
           ; If we are already in the last AU of the file we can optimize by
           ; quickly seeking to end of file and then seeking from current.
 
-lastlast:   dec   r9                    ; move to lsb of eof
-            dec   r9
-            dec   r9
+lastlast:   inc   rd                    ; move to lsb of offset
+            inc   rd
+            inc   rd
 
-            ldn   r9                    ; copy lsb of eof to lsb of offset
-            dec   r9
-            dec   r9
-            str   r9
-
-            inc   r9                    ; get msb of eof
+            dec   r9                    ; copy lsb of eof to lsb of offset
             ldn   r9
-            dec   r9 
-            dec   r9
+            str   rd
 
-            sex   r9                    ; replace offset bits 3-0 with eof
+            dec   r9                    ; get msb of eof
+            ldn   r9
+            dec   rd
+
+            sex   rd                    ; replace offset bits 3-0 with eof
             xor
-            ani   240
+            ani   15
             xor
-            str   r9
+            str   rd
+
+            dec   rd
+            dec   rd
 
 
           ; To seek relative to the current position, add the offset to the
@@ -1176,10 +1177,8 @@ seekforw:   sep   scall
           ; the difference in bytes from the start of the allocation units.
           ; Divide by 16 to get the actual allocation unit count difference.
 
-seekfrom:   glo   rb                    ; set stop bit 4 shifts in
-            ani   240
-            ori   8
-            plo   rb
+seekfrom:   ldi   4                     ; number of bits to shift
+            plo   re
 
 offstoau:   glo   rc                    ; divide by 16 to get au count
             shr
@@ -1191,8 +1190,9 @@ offstoau:   glo   rc                    ; divide by 16 to get au count
             shrc
             plo   rb
 
-            lbnf  offstoau              ; shift until stop bit emerges
-
+            dec   re                    ; shift until all bits done
+            glo   re
+            lbnz  offstoau
 
             glo   rd                    ; get pointer to flags
             adi   8
@@ -3322,6 +3322,7 @@ clearflg:   ldi   0
             smbi  0
             phi   rd
 
+            adi   0
             sep   sret
 
 
@@ -4589,6 +4590,10 @@ deleinit:  plo     re
            stxd
            ghi     ra
            stxd
+           glo     rb                  ; save consumed registers
+           stxd
+           ghi     rb
+           stxd
            glo     rd                  ; save consumed registers
            stxd
            ghi     rd
@@ -4729,6 +4734,10 @@ delexit:   shr                         ; shift result into DF
            phi     rd
            ldxa
            plo     rd
+           ldxa
+           phi     rb
+           ldxa
+           plo     rb
            ldxa
            phi     ra
            ldxa
@@ -6390,7 +6399,7 @@ oom:        smi     0                   ; set df
 
 
 
-bootmsg:    db     'Mini/DOS 4.3.6',10,13
+bootmsg:    db     'Mini/DOS 4.3.7',10,13
             db     'Visit github.com/dmadole/MiniDOS',10,13,0
 prompt:     db     10,13,'Ready',10,13,': ',0
 errnf:      db     'File not found.',10,13,0
