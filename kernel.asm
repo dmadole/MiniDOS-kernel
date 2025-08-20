@@ -557,15 +557,17 @@ rawrite:    glo   r9                    ; free register for fildes pointer
             ghi   r8
             stxd
 
-writret:    inc   r2                    ; restore buffer pointer register
-            lda   r2
+            sex   r2
+
+writret:    irx                         ; restore buffer pointer register
+            ldxa
             phi   rf
-            lda   r2
+            ldxa
             plo   rf
 
-            lda   r2                    ; restore fildes pointer register
+            ldxa                        ; restore fildes pointer register
             phi   r9
-            ldn   r2
+            ldx
             plo   r9
 
             sep   sret                  ; return
@@ -616,7 +618,10 @@ rawread:    glo   r9                    ; free working pointer register
             dec   r9                    ; if drive is the same, return success
             ghi   r8
             xor
-            lbz   readret
+            lbnz  readsec
+
+            sex   r2                    ; reset stack index and return
+            lbr   readret
 
           ; Requesting a different sector than already loaded, need to read.
 
@@ -742,16 +747,18 @@ nodirty:    ghi   r8                    ; set for backwards compatibility
             ghi   r8
             stxd
 
-readerr:    inc   r2                    ; restore from buffer pointer use
-            lda   r2
+            sex   r2
+
+readerr:    irx                        ; restore from buffer pointer use
+            ldxa
             phi   rf
-            ldn   r2
+            ldx
             plo   rf
 
-readret:    inc   r2
-            lda   r2                    ; restore from fildes pointer use
+readret:    irx
+            ldxa                        ; restore from fildes pointer use
             phi   r9
-            ldn   r2
+            ldx
             plo   r9
 
             sep   sret                  ; return with status in df
@@ -3174,31 +3181,43 @@ writtest:   glo   ra
             shr
             sep   sret
 
-       
-          ; Close a file
+          ; ------------------------------------------------------------------
+          ; Close an open file
           ;
           ; Input:
           ;   RD - file descriptor
           ; Returns:
           ;   DF - set if error
 
-close:      glo   rd                    ; point rd to fildes flags
+close:      glo   rb                    ; save for fildes working pointer
+            stxd
+            ghi   rb
+            stxd
+
+            glo   rd                    ; get pointer to flag byte in fildes
             adi   8
-            plo   rd
+            plo   rb
             ghi   rd
             adci  0
-            phi   rd
+            phi   rb
 
-            ldn   rd                    ; if not open and written to
-            ani   16+8
-            smi   16+8
-            lbnf  clearflg
+          ; Need to do two pre-flight checks. If the file is not opened, then
+          ; return an immediate error. If the file was not written to, return
+          ; an immediate success.
 
+            ldn   rb                    ; if not open return with df set
+            ani   8
+            sdi   0
+            lbz   noclose
 
-          ; Since the file is open and has been written to, update the EOF
-          ; count and the date and time in it's directory entry.
+            lda   rb                    ; if not written return df cleared
+            ani   16
+            lbz   noclose
 
-            glo   r9                    ; save working registers
+          ; In the remaining case, an opened file that was written to, flush
+          ; the DTA if it has been modified, and update the directory entry.
+
+            glo   r9                    ; save rest of registers we need
             stxd
             ghi   r9
             stxd
@@ -3211,88 +3230,87 @@ close:      glo   rd                    ; point rd to fildes flags
             ghi   r7
             stxd
 
-            inc   rd                    ; skip flags
-
-            lda   rd                    ; get sector of directory entry
+            lda   rb                    ; get sector of directory entry
             phi   r8
-            lda   rd
+            lda   rb
             plo   r8
-            lda   rd
+            lda   rb
             phi   r7
-            lda   rd
+            lda   rb
             plo   r7
 
-            lda   rd                    ; push offset of directory entry
-            stxd
-            lda   rd
-            stxd
-
-            glo   rd                    ; back to beginning of fildes
-            smi   15
-            plo   rd
-            ghi   rd
-            smbi  0
-            phi   rd
-
-
+          ; To avoid flushing a system buffer unnecessarily, we reuse the
+          ; file's DTA to buffer it's directory entry to modify it. After
+          ; all, we know the file is done with it anyway.
+          ;
           ; Note that before rawread loads the directory sector, it will
           ; automatically flush the buffer data first if it's dirty.
 
-            sep   scall                 ; read in directory sector
+            sep   scall                 ; read in sector, abort if error
             dw    rawread
-
-            inc   rd                    ; point to dta address
-            inc   rd
-            inc   rd
-            inc   rd
-
-            inc   rd                    ; add dta address to offset
-            ldn   rd
-            irx
-            add
-            plo   r9
-            dec   rd
-            lda   rd
-            irx
-            adc
-            phi   r9
-            inc   rd
-
+            lbdf  closerr
 
           ; R9 now points to the entry within the loaded directory sector.
           ; Update the flags, EOF, and date and time into the buffer.
 
-            inc   r9                    ; skip file allocation unit
-            inc   r9
-            inc   r9
-            inc   r9
+            lda   rb                    ; get entry offset plus eof field
+            phi   r9
+            lda   rb
+            adi   4
+            plo   r9
 
-            lda   rd                    ; update eof count into entry
+            glo   rd                    ; adjust fildes pointer to dta lsb
+            adi   5
+            plo   rb
+            ghi   rd
+            adci  0
+            phi   rb
+
+            sex   rb
+
+            glo   r9                   ; add offset to dta to get address
+            add
+            plo   r9
+            dec   rb
+            ghi   r9
+            adc
+            phi   r9
+
+          ; Since the file is open and has been written to, update the EOF
+          ; count and the date and time in it's directory entry.
+
+            inc   rb                    ; move to eof size field in fildes
+            inc   rb
+
+            lda   rb                    ; update eof into directory entry
             str   r9
             inc   r9
-            lda   rd
+            lda   rb
             str   r9
             inc   r9
 
-            ldn   r9                    ; set archve bit on file
+            ldn   r9                    ; set archve bit in directory entry
             ori   ff_archive
             str   r9
             inc   r9
 
-            sep   scall                 ; get current date/time
+            sep   scall                 ; write timestamp to directory entry
             dw    gettmdt
 
-
-          ; Clear the file descriptor flags and point back to the start of
-          ; the descriptor, then write the diretory sector back out.
-
-            sep   scall                 ; clear flags and reset pointer
-            dw    clearflg
+          ; Write the modified sector back to disk to finish closing the file.
+          ;
+          ; If the write fails, the file will be left open, but rawread will
+          ; have succeeded in flushing any modified data sector if needed, so
+          ; close could safely be called again.
 
             sep   scall                 ; write updated directory entry
             dw    rawrite
+            lbdf  closerr
 
-            irx                         ; restore modified registers
+            ldi   0                     ; if written ok then clear all flags
+            str   rb
+
+closerr:    irx                         ; restore over working registers
             ldxa
             phi   r7
             ldxa
@@ -3306,24 +3324,13 @@ close:      glo   rd                    ; point rd to fildes flags
             ldx
             plo   r9
 
-            sep   sret                  ; return result of rawrite
+noclose:    irx                         ; restore over  working pointer
+            ldxa
+            phi   rb
+            ldx
+            plo   rb
 
-
-          ; RD points to the flags byte; clear it, reset RD to the start of
-          ; the file descriptor, then return.
-
-clearflg:   ldi   0
-            str   rd
-
-            glo   rd
-            smi   8
-            plo   rd
-            ghi   rd
-            smbi  0
-            phi   rd
-
-            adi   0
-            sep   sret
+            sep   sret                  ; return with status set in df
 
 
 ; **********************************
