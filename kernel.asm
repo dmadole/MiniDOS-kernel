@@ -5604,13 +5604,10 @@ skipdrv:   sep     scall               ; get pointer to last byte of memory
            sep     scall               ; get terminal baud rate
            dw      o_setbd
 
-welcome:   ldi     bootmsg.1
-           phi     rf
-           ldi     bootmsg.0
-           plo     rf
-
-           sep     scall
-           dw      o_msg
+welcome:   sep     scall
+           dw      o_inmsg
+           db     'Mini/DOS 4.3.7',10,13
+           db     'Visit github.com/dmadole/MiniDOS',10,13,0
      
 warmboot:  plo     re                  ; save return value
            ldi     retval.0            ; point to retval
@@ -5651,13 +5648,9 @@ warm3:
 ; *************************
 ; *** Main command loop ***
 ; *************************
-cmdlp:     ldi      prompt.1             ; get address of prompt into R6
-           phi      rf
-           ldi      prompt.0
-           plo      rf
-
-           sep      scall
-           dw       o_msg                ; function to print a message
+cmdlp:     sep      scall                ; output the command line prompt
+           dw       o_inmsg
+           db       10,13,'Ready',10,13,': ',0
 
            ldi      keybuf.1             ; place address of keybuffer in R6
            phi      rf
@@ -5725,13 +5718,9 @@ skipspc2:  lda      rf
 
            lbr      cmdlp                ; loop back for next command
 
-loaderr:   ldi      errnf.1              ; point to not found message
-           phi      rf
-           ldi      errnf.0
-           plo      rf
-
-           sep      scall                ; display it
-           dw       o_msg
+loaderr:   sep      scall                ; display it
+           dw       o_inmsg
+           db       'File not found.',10,13,0
 
            lbr      cmdlp                ; loop back for next command
 
@@ -6368,12 +6357,6 @@ oomret:     irx
 oom:        smi     0                   ; set df 
             lbr     oomret
 
-
-
-bootmsg:    db     'Mini/DOS 4.3.7',10,13
-            db     'Visit github.com/dmadole/MiniDOS',10,13,0
-prompt:     db     10,13,'Ready',10,13,': ',0
-errnf:      db     'File not found.',10,13,0
 
           ; These paths are overwritten by KINIT with the correct boot drive
           ; number. Include two digits here so enough space is allocated.
