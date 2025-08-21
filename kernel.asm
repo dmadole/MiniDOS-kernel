@@ -201,7 +201,7 @@ clockfrq:   dw    4000                  ; processor clock speed in khz
 
 curdrive:   db    0                     ; not used
 
-datetime:   db    1,17,49,0,0,0         ; date and time buffer m/d/y h:m:s
+dattim:     db    1,17,49,0,0,0         ; date and time buffer m/d/y h:m:s
 secnum:     dw    0                     ; numerator of fractional seconds
 secden:     dw    0                     ; denominator of fractional seconds
 
@@ -3299,7 +3299,7 @@ close:      glo   rb                    ; save for fildes working pointer
             inc   r9
 
             sep   scall                 ; write timestamp to directory entry
-            dw    gettmdt
+            dw    gettime
 
           ; Write the modified sector back to disk to finish closing the file.
           ;
@@ -3575,65 +3575,66 @@ goteof:     xri   4+8
             sep   sret                   ; return
 
 
-; ***************************************
-; *** Follow a directory tree         ***
-; *** RD - Dir descriptor             ***
-; *** RF - Pathname                   ***
-; *** Returns: RD - final dir in path ***
-; ***          DF=0 - success         ***
-; ***          DF=1 - error           ***
-; ***************************************
+          ; ------------------------------------------------------------------
+          ; FOLLOW - Follow a directory tree
+          ;
+          ; Input:
+          ;   RD - dir descriptor
+          ;   RF - pathname
+          ;
+          ; Returns:
+          ;   RD - final dir in path
+          ;   DF - set if error
 
-follow:    ghi     rf                  ; copy path to rb
-           phi     rb
-           glo     rf
-           plo     rb
+follow:     ghi   rf                    ; copy path to rb
+            phi   rb
+            glo   rf
+            plo   rb
 
-findseplp: lda     rf                  ; get byte from pathname
-           lbz     founddir            ; jump if no more dirnames
-           smi     '/'                 ; check for separator
-           lbnz    findseplp           ; keep looping if not found
+findsep:    lda   rf                    ; get byte from pathname
+            lbz   lastdir               ; jump if no more dirnames
+            smi   '/'                   ; check for separator
+            lbnz  findsep               ; keep looping if not found
 
-           sep     scall               ; search for name
-           dw      searchdir
+            sep   scall                 ; search for name
+            dw    searchdir
 
-           lbnf    finddir1            ; jump if entry was found
+            lbnf  matched               ; jump if entry was found
 
-           ldi     errnoffnd           ; signal an error
-           lbr     error
+            ldi   errnoffnd             ; signal an error
+            lbr   error
 
-finddir1:  glo     rf                  ; point to flags
-           adi     6
-           plo     rb
-           ghi     rf
-           adci    0
-           phi     rb
+matched:    glo   rf                    ; point to flags
+            adi   6
+            plo   rb
+            ghi   rf
+            adci  0
+            phi   rb
 
-           ldn     rb                  ; get flags
-           ani     1                   ; see if entry is a dir
-           lbnz    finddir2            ; jump if so
+            ldn   rb                    ; get flags
+            ani   1                     ; see if entry is a dir
+            lbnz  havedir               ; jump if so
 
-           ldi     errinvdir           ; invalid directory error
-           lbr     error
+            ldi   errinvdir             ; invalid directory error
+            lbr   error
 
-finddir2:  sep     scall               ; set fd to new directory
-           dw      setupfd
+havedir:    sep   scall                 ; set fd to new directory
+            dw    setupfd
 
-           glo     rc
-           plo     rf
-           ghi     rc
-           phi     rf
+            glo   rc
+            plo   rf
+            ghi   rc
+            phi   rf
 
-           lbr     follow              ; and get next
+            lbr   follow                ; and get next
 
-founddir:  glo     rb
-           plo     rf
-           ghi     rb
-           phi     rf
+lastdir:    glo   rb
+            plo   rf
+            ghi   rb
+            phi   rf
 
-           ldi     0                   ; signal success
-           shr
-           sep     sret                ; return to caller
+            adi   0                     ; signal success
+            sep   sret
 
 
 ; ***********************************************
@@ -3880,6 +3881,8 @@ foundit:    inc   rd                    ; move to low byte of file offset
             dec   rd                    ; return to start of descriptor
             dec   rd
             dec   rd
+
+            shr                         ; clear df to signal success
 
 freeerr:    sep   sret                  ; return to caller
 
@@ -4240,7 +4243,7 @@ create:     glo   rb                    ; save filename address
             plo   r9
 
             sep   scall                 ; fill in the current date and time
-            dw    gettmdt
+            dw    gettime
 
             ldi   0                     ; zero out the supplementary flags
             str   r9
@@ -5098,7 +5101,7 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
             inc   r9
  
             sep   scall                 ; get current date/time
-            dw    gettmdt
+            dw    gettime
  
             ldi   0                     ; aux flags
             str   r9
@@ -5733,98 +5736,117 @@ loaderr:   ldi      errnf.1              ; point to not found message
            lbr      cmdlp                ; loop back for next command
 
 
-; *******************************************
-; *** Get date and time                   ***
-; *** Writes packed date and time into    ***
-; *** memory at R9, which is advanced     ***
-; *** four bytes                          ***
-; *******************************************
+          ; ------------------------------------------------------------------
+          ; GETTIME - Get date and time
+          ;
+          ; This gets the current date and time and writes it into memory
+          ; packed into 16 bits (actually the same format that MS-DOS uses).
+          ;
+          ; Input:
+          ;   R9 - where to write time
+          ;
+          ; Return:
+          ;   R9 - advanced past time
 
-gettmdt:   glo     rf                  ; save consumed register
-           stxd
-           ghi     rf
-           stxd
+gettime:    glo   rf                    ; save consumed register
+            stxd
+            ghi   rf
+            stxd
 
-           sep     scall               ; get devices
-           dw      o_getdev
+          ; Find out whether the BIOS supports an RTC, if it does, we will
+          ; call it to get the date and time. Otherwise, we will use what
+          ; is stored in DATTIM, which possibly is updated by an interrupt-
+          ; driven clock, and if not, will just be a static value.
 
-           glo     rf
-           ani     010h                ; see if RTC is installed
-           lbz     no_rtc              ; jump if no rtc
+            sep   scall                 ; get devices
+            dw    o_getdev
 
-           ldi     datetime.1          ; point to scratch area
-           phi     rf
-           ldi     datetime.0
-           plo     rf
+            glo   rf                    ; skip if rtc is not supported
+            ani   %10000
+            lbz   rtcfail
 
-           ghi     rc                  ; save due to bug in mbios
-           stxd
+            ldi   dattim.1              ; pointer to static date and time
+            phi   rf
+            ldi   dattim.0
+            plo   rf
 
-           sep     scall               ; get time and date
-           dw      o_gettod
+            ghi   rc                    ; save due to bug in mbios
+            stxd
 
-           irx                         ; restore
-           ldx
-           phi     rc
+            sep   scall                 ; get time and date from bios
+            dw    o_gettod
 
-no_rtc:    ldi     datetime.1          ; point to scratch area
-           phi     rf
-           ldi     datetime.0
-           plo     rf
+            irx                         ; restore saved register
+            ldx
+            phi   rc
 
-rtc_cont:  lda     rf                  ; get month, shift left 5 bits,
-           shl                         ;  hold result on stack
-           shl
-           shl
-           shl
-           shl
-           str     r2
+rtcfail:    ldi   dattim.1              ; point to to start of date and time
+            phi   rf
+            ldi   dattim.0
+            plo   rf
 
-           lda     rf                  ; get day, or with shifted month,
-           or                          ;  save to result
-           plo     re
+          ; Assemble first two bytes with date formatted as YYYYYYYM MMMDDDDD
 
-           lda     rf                  ; get year, shift in high bit of
-           shlc                        ;  month, save to result
-           str     r9
-           inc     r9
+            lda   rf                    ; get month and shift left 5 bits
+            shl
+            shl
+            shl
+            shl
+            shl
 
-           glo     re
-           str     r9
-           inc     r9
+            str   r2                    ; or shifted month with day
+            lda   rf
+            or
+            inc   r9
+            str   r9
+ 
+            lda   rf                    ; get year, shift in high bit of month
+            shlc
+            dec   r9
+            str   r9
 
-           lda     rf                  ; get hours, shift left 3 bits,
-           shl                         ;  hold result on stack
-           shl
-           shl
-           str    r2
+            inc   r9                    ; skip to hours field
+            inc   r9
 
-           ldn    rf                   ; get minutes, shift right 3 bits,
-           shr                         ;  or with hours, save to result
-           shr
-           shr
-           or
-           str     r9
-           inc     r9
+          ; Assemble last two bytes with time formatted as HHHHHMMM MMMSSSSS
+          ; Note that the lowest bit of the seconds field is omitted, so the
+          ; resolution of the date and time is two seconds.
 
-           lda    rf                   ; get minutes again, shift right 5,
-           shl                         ;  or with seconds, save to result
-           shl
-           shl
-           shl
-           shl
-           sex    rf
-           or
-           str     r9
-           inc     r9
+            lda   rf                    ; get hours, shift left 3 bits,
+            shl                         ;  hold result on stack
+            shl
+            shl
+            str   r2
 
-gettm_dn:  inc     r2                  ; recover consumed register
-           lda     r2
-           phi     rf
-           ldn     r2
-           plo     rf
+            ldn   rf                    ; get minutes, shift right 3 bits,
+            shr
+            shr
+            shr
 
-           sep     sret                ; and return
+            or                          ;  or with hours, save to result
+            str   r9
+            inc   r9
+
+            lda   rf                    ; rotate 3 low bits of minutes to top
+            ani   %111
+            shr
+            shrc
+            shrc
+            str   r2
+
+            lda   rf                    ; or with seconds, shift and save
+            or
+            shrc
+            str   r9
+            inc   r9
+
+            irx                         ; recover consumed register
+            ldxa
+            phi   rf
+            ldx
+            plo   rf
+
+            sep   sret                  ; and return
 
 
 ; *******************************************
