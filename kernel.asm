@@ -3377,94 +3377,121 @@ getsecofs: inc     rd                  ; move to low word of offset
 
            sep     sret                ; return to caller
 
-; *****************************************
-; *** search directory for an entry     ***
-; *** RD - file descriptor (dir)        ***
-; *** RB - filename (asciiz)            ***
-; *** Returns: R8:R7 - Dir Sector       ***
-; ***             R9 - Dir Offset       ***
-; ***             RF - Dir Entry        ***
-; ***          DF=0  - entry found      ***
-; ***          DF=1  - entry not found  ***
-; *****************************************
 
-searchdir: sep     scall               ; get current sector and offset
-           dw      getsecofs
+          ; ------------------------------------------------------------------
+          ; SCANDIR - Search directory for an entry
+          ;
+          ; Input:
+          ;   RD - file descriptor of directory
+          ;   RB - filename to look for
+          ;
+          ; Returns:
+          ;   R8:R7 - directory sector
+          ;   R9 - directory entry offset
+          ;   RF - pointer to directory entry
+          ;   DF - set if entry not found
 
-           ldi     dirent.1            ; setup buffer
-           phi     rf
-           ldi     dirent.0
-           plo     rf
+scandir:    ldi   dirent.1              ; setup buffer pointer high byte
+            phi   rf
+            ldi   dirent                ; set buffer to start of entry
+            plo   rf
 
-           ldi     0                   ; need to read 32 bytes
-           phi     rc
-           ldi     32
-           plo     rc
+            ldi   31
+            plo   rc
 
-           sep     scall               ; perform read
-           dw      o_read
+            lbr   dirscan
 
-           glo     rc                  ; see if enough bytes were read
-           smi     32
-           lbnz    searchno            ; jump if end of dir was hit
+dirloop:    ldi   dirent-1              ; set buffer to start of entry
+            plo   rf
 
-           ldi     dirent.1         ; setup buffer
-           phi     rf
-           ldi     dirent.0
-           plo     rf
+            ldi   32                    ; each entry is 32 bytes to read
+dirscan:    plo   rc
 
-           lda     rf                  ; see if entry is valid
-           lbnz    entrygood
-           lda     rf
-           lbnz    entrygood
-           lda     rf
-           lbnz    entrygood
-           lda     rf
-           lbnz    entrygood
+            str   r2
+            dec   r2
 
-           lbr     searchdir           ; entry was no good, try again
+            ldi   0                     ; clear high byte of read length
+            phi   rc
 
-entrygood: ldi     (dirent+12).1       ; setup buffer
-           phi     rf
-           ldi     (dirent+12).0
-           plo     rf
+            sep   scall                 ; read directory entry from file
+            dw    o_read
 
-           glo     rb                  ; get copy of filename to match
-           plo     rc
-           ghi     rb
-           phi     rc
+            ldi   0
+            str   rf
 
-cmploop:   lda     rf                  ; compare filenames until end
-           lbz     cmpzero
-           str     r2
-           lda     rc
-           xor
-           lbz     cmploop
+            glo   rc                    ; see if enough bytes were read
+            irx
+            sd
+            lbnz  nomatch               ; jump if end of dir was hit
 
-           lbr     searchdir           ; char mismatch, check next entry
+          ; If the allocation unit is zero, this directory entry is unused.
 
-cmpzero:   ldn     rc                  ; if length matches, its a find
-           lbz     searchyes
+            ldi   dirent+2              ; point to allocation unit field
+            plo   rf
 
-           smi     '/'                 ; if length mismatch, keep looking
-           lbnz    searchdir
+            lda   rf                    ; if zero then continue with next
+            lbnz  dirused
+            lda   rf
+            lbz   dirloop
 
-           inc     rc                  ; if ends in slash then skip past it
-           lbr     searchyes
+          ; If not zero, then check if the filename matches this entry.
 
-searchno:  ldi     1                   ; match not found, return failure
-           lbr     searchex
+dirused:    ldi   dirent+12             ; point to the name field in entry
+            plo   rf
 
-searchyes: ldi     0                   ; match was found, return success
+            glo   rb                    ; get copy of filename to match
+            plo   rc
+            ghi   rb
+            phi   rc
 
-searchex:  shr
+          ; Compare names until we get to the end of the search name, or
+          ; until a mismatch (including hitting the end of the entry name).
 
-           ldi     dirent.1            ; setup buffer
-           phi     rf
-           ldi     dirent.0
-           plo     rf
+            sex   rc                    ; set index to rc and enter loop
+            lbr   compare
 
-           sep     sret                ; return to caller
+cmploop:    sm                          ; skip to next entry if no match
+            irx
+            lbnz  dirloop
+
+compare:    lda   rf                    ; compare characters until end
+            lbnz  cmploop
+
+          ; Check to see if the search name is at the end of the string, or
+          ; at a path separator, since we are just matching one element.
+
+            ldn   rc                    ; if length matches, its a find
+            lbz   matches
+
+            smi   '/'                   ; if length mismatch, keep looking
+            lbnz  dirloop
+
+            inc   rc                    ; if ends in slash then skip past it
+
+matches:    inc   rd                    ; point to lsb of file offset
+            inc   rd
+            inc   rd
+
+            ldn   rd                    ; seek to start of entry
+            ani   %11100000
+            str   rd
+
+            dec   rd                    ; restore rd to start of fildes
+            dec   rd
+            dec   rd
+
+            sep   scall                 ; get current sector and offset
+            dw    getsecofs
+
+            ldi   dirent.0              ; point to directory entry
+            plo   rf
+
+            adi   0                     ; match was found, return success
+            sep   sret
+
+nomatch:    smi   0
+            sep   sret                  ; return to caller
+
 
 
           ; Setup new file descriptor
@@ -3597,7 +3624,7 @@ findsep:    lda   rf                    ; get byte from pathname
             lbnz  findsep               ; keep looping if not found
 
             sep   scall                 ; search for name
-            dw    searchdir
+            dw    scandir
 
             lbnf  matched               ; jump if entry was found
 
@@ -3926,7 +3953,7 @@ execbin:   glo     r7                  ; save consumed registers
            dw      execdir
 
            sep     scall               ; perform directory search
-           dw      searchdir
+           dw      scandir
            lbdf    execfail            ; jump if failed to get dir
 
            sep     scall               ; close the directory
@@ -4034,7 +4061,7 @@ open:      glo     r7                  ; save consumed registers
            lbr     openerr
 
 gotdir:    sep     scall               ; perform directory search
-           dw      searchdir
+           dw      scandir
            lbdf    newfile             ; jump if file needs creation
 
            irx                         ; advance stack to open flags
@@ -4446,7 +4473,7 @@ delete:    glo     r3
            dw      finddir
 
            sep     scall               ; perform directory search
-           dw      searchdir
+           dw      scandir
            lbnf    delfile             ; jump if file exists
 
 delfail:   ldi     1                   ; signal an error
@@ -4522,7 +4549,7 @@ rename:    glo     r3
            dw      finddir
 
            sep     scall               ; perform directory search
-           dw      searchdir
+           dw      scandir
            lbnf    renfile             ; jump if file exists
 
            irx                         ; drop filename from stack and fail
@@ -5031,9 +5058,8 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
             lbdf  mkdirer
 
             sep   scall                 ; if file exists then error
-            dw    searchdir
+            dw    scandir
             lbnf  mkdirer
-
 
 
 
@@ -5042,21 +5068,25 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
             ghi   rb
             stxd
 
-            ghi   r8
-            stxd
-
             sep   scall                 ; find a free dir entry
             dw    freedir
 
-            irx                         ; recover filename
-            ldxa
-            phi   r8
-
+            irx
             ldxa
             phi   rb
             ldx
             plo   rb
 
+
+            glo   rd                    ; get drive number
+            adi   15
+            plo   rf
+            ghi   rd
+            adci  0
+            phi   rf
+
+            ldn   rf
+            phi   r8
 
 
             sep   scall
