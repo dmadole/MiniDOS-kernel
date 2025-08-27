@@ -4622,7 +4622,10 @@ delexit:   shr                         ; shift result into DF
 ; *** Returns: DF=0 - success ***
 ; ***          DF=1 - Error   ***
 ; *******************************
-rmdir:     sep     scall               ; check for final slash
+rmdir:     ldn     rf
+           lbz     error
+
+           sep     scall               ; check for final slash
            dw      finalsl
 
            glo     r7                  ; save consumed registers
@@ -4641,6 +4644,10 @@ rmdir:     sep     scall               ; check for final slash
            stxd
            ghi     ra
            stxd
+           glo     rb                  ; save consumed registers
+           stxd
+           ghi     rb
+           stxd
            glo     rd                  ; save consumed registers
            stxd
            ghi     rd
@@ -4650,6 +4657,11 @@ rmdir:     sep     scall               ; check for final slash
            ghi     rc
            stxd
 
+           ghi     rf
+           phi     rb
+           glo     rf
+           plo     rb
+
            sep     scall               ; open the directory
            dw      o_opendir
            lbnf    rmdirlp             ; jump if dir opened
@@ -4657,7 +4669,6 @@ rmdir:     sep     scall               ; check for final slash
            ldi     errnoffnd           ; signal not found error
 rmdirerr:  shl
            ori     1
-           shr
            lbr     delexit             ; and return
 
 rmdirlp:   ldi     0                   ; need to read 32 bytes
@@ -4693,10 +4704,20 @@ rmdirlp:   ldi     0                   ; need to read 32 bytes
 
            lbr     rmdirlp             ; read rest of dir
 
-rmdirno:   ldi     errdirnotempty      ; indicate not empty error
+rmdirno:   ghi     rb
+           phi     rf
+           glo     rb
+           plo     rf
+
+           ldi     errdirnotempty      ; indicate not empty error
            lbr     rmdirerr            ; and error out
 
-rmdireof:  glo     rd
+rmdireof:  ghi     rb
+           phi     rf
+           glo     rb
+           plo     rf
+
+           glo     rd
            adi     9
            plo     rd
            ghi     rd
@@ -5073,9 +5094,26 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
 
             irx
             ldxa
-            phi   rb
+            phi   rf
             ldx
-            plo   rb
+            plo   rf
+
+
+            ldi   dirent.1
+            phi   r9
+            ldi   dirent+7
+            plo   r9
+
+            sep   scall                 ; get current date/time
+            dw    gettime
+ 
+            ldi   0                     ; aux flags
+            str   r9
+            inc   r9
+
+            sep   scall                 ; get current date/time
+            dw    copyname
+            lbnf  mkdirer
 
 
             glo   rd                    ; get drive number
@@ -5103,44 +5141,28 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
 
 
             ldi   dirent.1
-            phi   r9
-            ldi   dirent.0
-            plo   r9
+            phi   rf
+            ldi   dirent+6
+            plo   rf
 
-            ldi   0                     ; initial zero bytes
-            str   r9
-            inc   r9
-            str   r9
-            inc   r9
-
-            ghi   ra                    ; allocation unit
-            str   r9
-            inc   r9
-            glo   ra
-            str   r9
-            inc   r9
-
-            ldi   0                     ; end of file
-            str   r9
-            inc   r9
-            str   r9
-            inc   r9
+            sex   rf
 
             ldi   1                     ; flags are directory
-            str   r9
-            inc   r9
+            stxd
  
-            sep   scall                 ; get current date/time
-            dw    gettime
- 
-            ldi   0                     ; aux flags
-            str   r9
-            inc   r9
+            ldi   0                     ; end of file
+            stxd
+            stxd
 
-copynam:    lda   rb                    ; copy name
-            str   r9
-            inc   r9
-            lbnz  copynam
+            glo   ra                    ; allocation unit
+            stxd
+            ghi   ra
+            stxd
+
+            ldi   0                     ; initial zero bytes
+            stxd
+            str   rf
+
 
 
 
@@ -5216,146 +5238,240 @@ mkdirrt:    irx                         ; recover consumed registers
 ; *** Returns: DF=0 - success       ***
 ; ***          DF=1 - error         ***
 ; *************************************
-chdir:     ldn     rf                  ; get first byte of pathname
-           lbz     viewdir             ; jump if to view
 
-           sep     scall               ; check for final slash
-           dw      finalsl
+chdir:      ldn   rf                    ; jump if to view
+            lbz   viewdir
 
-           glo     rb                  ; save consumed registers
-           stxd
-           ghi     rb
-           stxd
-           glo     rd                  ; save consumed registers
-           stxd
-           ghi     rd
-           stxd
-           glo     rf                  ; save consumed registers
-           stxd
-           ghi     rf
-           stxd
+            glo   r7
+            stxd
+            ghi   r7
+            stxd
 
-           sep     scall               ; find directory
-           dw      finddir
+            glo   r8
+            stxd
+            ghi   r8
+            stxd
 
-           plo     re                  ; save result code
+            glo   r9
+            stxd
+            ghi   r9
+            stxd
 
-           irx                         ; recover consumed registers
-           ldxa
-           phi     rf
-           ldxa
-           plo     rf
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rb
-           ldx
-           plo     rb
+            glo   ra
+            stxd
+            ghi   ra
+            stxd
 
-           lbdf    chdirerr            ; jump on error
+            glo   rb
+            stxd
+            ghi   rb
+            stxd
 
-           glo     ra                  ; save consumed register
-           stxd
-           ghi     ra
-           stxd
+            glo   rc
+            stxd
+            ghi   rc
+            stxd
 
-           ldi     path.1              ; point to current dir storage
-           phi     ra
-           ldi     path.0
-           plo     ra
+            glo   rd
+            stxd
+            ghi   rd
+            stxd
 
-           ldn     rf                  ; get first byte of path
-           smi     '/'                 ; check for absolute
-           lbnz    chdirlp2            ; jump if not
+            glo   rf
+            stxd
+            ghi   rf
+            stxd
 
-           inc     rf
-           inc     ra
+            sep   scall                 ; find directory
+            dw    finddir
+            lbdf  nochdir               ; error if directory was not found
 
-           ldn     rf                  ; check if drive-absolute
-           smi     '/'                 ; jump if so
-           lbz     chdirlp
+          ; If entire path consumed, then it was a directory path ending in
+          ; a slash, proceed to change directory.
 
-           inc     ra
+            ldn   rb                    ; proceed if no file part
+            lbz   dochdir
 
-chdirlp3:  lda     ra
-           smi     '/'
-           lbnz    chdirlp3
+          ; The remaining part of the path might be a directory, or it might
+          ; be a file, or it might not even exist. Look it up in directory.
+ 
+            sep   scall                 ; error if it doesn't exist at all
+            dw    scandir
+            lbdf  nochdir
 
-           lbr     chdirlp
+            ldi   dirent.1              ; if exists, check flags if directory
+            phi   ra
+            ldi   dirent+6
+            plo   ra
 
-chdirlp2:  lda     ra                  ; find way to end of path
-           lbnz    chdirlp2
+            ldn   ra                    ; error if it is not a directory
+            ani   1
+            lbz   nochdir
 
-           dec     ra                  ; back up to terminator
+          ; Check to see what kind of path was given, absolute or relative,
+          ; so that we can retain the appropriate part of the current path.
 
-chdirlp:   lda     rf                  ; get byte from path
-           str     ra                  ; store into path
-           inc     ra
+dochdir:    irx                         ; restore the start of new path
+            ldxa
+            phi   rf
+            phi   rb
+            ldx
+            plo   rf
+            plo   rb
 
-           smi     33                  ; loof for terminators
-           lbdf    chdirlp             ; loop until terminator found
+            ldi   path.1                ; point to current dir storage
+            phi   ra
+            ldi   path.0
+            plo   ra
 
-           irx                         ; recover consumed register
-           ldxa
-           phi     ra
-           ldx
-           plo     ra
+            ldn   rb                    ; check if a fully relative path
+            smi   '/'
+            lbnz  relpath
 
-           ldi     0                   ; indicate success
-           shr
+          ; If the path starts with two slashes, then it is fully absolute
+          ; and should be copied over the entire current directory path.
 
-           sep     sret                ; and return to caller
+            inc   rb                    ; skip first slash on both paths
+            inc   ra
 
-chdirerr:  glo     re                  ; recover error
-           lbr     error               ; and return with error
+            ldn   rb                    ; if second slash, drive is included
+            smi   '/'
+            lbz   chdirlp
 
-viewdir:   glo     rf                  ; save consumed registers
-           stxd
-           ghi     rf
-           stxd
-           glo     ra
-           stxd
-           ghi     ra
-           stxd
+          ; If the path starts with a single slash, then it is relative to
+          ; the current disk, so skip past the disk part of the current path.
 
-           ldi     path.1              ; get current dir
-           phi     ra
-           ldi     path.0
-           plo     ra
+            inc   ra                    ; skip second slash in current path
 
-viewdirlp: lda     ra                  ; get byte from current dir
-           str     rf                  ; write to output
-           inc     rf
+skipdsk:    lda   ra                    ; skip over drive part of path
+            smi   '/'
+            lbnz  skipdsk
 
-           lbnz    viewdirlp           ; loop until terminator found
+            lbr   chdirlp               ; copy drive-relative path over
 
-           irx                         ; recover consumed registers
-           ldxa
-           phi     ra
-           ldxa
-           plo     ra
-           ldxa
-           phi     rf
-           ldx
-           plo     rf
+          ; If a relative path was given, then we need to append onto the
+          ; current working directory, so skip entire current directory.
 
-           ldi     0                   ; indicate success
-           shr
+relpath:    lda   ra                    ; find way to end of path
+            lbnz  relpath
 
-           sep     sret                ; and return to caller
+            dec   ra                    ; back up to terminator
+
+          ; The source and destination have been adjusted as needed, so now
+          ; copy the data into the current directory path storage.
+
+chdirlp:    lda   rb                    ; get byte from path
+            str   ra
+            inc   ra
+
+            lbnz  chdirlp               ; loop until terminator
+
+          ; Make sure the current working directory path ends in a slash.
+
+            dec   ra                    ; back up to last character of path
+            dec   ra
+
+            lda   ra                    ; if already ends in slash then done
+            smi   '/'
+            lbz   chdirok
+
+            ldi   '/'                   ; otherwise append a slash
+            str   ra
+            inc   ra
+
+            ldi   0                     ; and terminating null
+            str   ra
+
+chdirok:    adi   0                     ; operation was successful
+
+            irx                         ; restore saved registers
+chdirex:    ldxa
+            phi   rd
+            ldxa
+            plo   rd
+
+            ldxa
+            phi   rc
+            ldxa
+            plo   rc
+
+            ldxa
+            phi   rb
+            ldxa
+            plo   rb
+
+            ldxa
+            phi   ra
+            ldxa
+            plo   ra
+
+            ldxa
+            phi   r9
+            ldxa
+            plo   r9
+
+            ldxa
+            phi   r8
+            ldxa
+            plo   r8
+
+            ldxa
+            phi   r7
+            ldx
+            plo   r7
+
+            sep   sret                  ; return
+
+nochdir:    smi   0                     ; operation failed
+
+            irx                         ; restore the start of new path
+            ldxa
+            phi   rf
+            ldxa
+            plo   rf
+
+            lbr   chdirex               ; restore the rest and return
+
+
+
+
+viewdir:    glo   rf                    ; save consumed registers
+            stxd
+            ghi   rf
+            stxd
+
+            glo   ra
+            stxd
+            ghi   ra
+            stxd
+
+            ldi   path.1                ; get current directory path
+            phi   ra
+            ldi   path.0
+            plo   ra
+
+viewdirlp:  lda   ra                    ; copy each byte from current path
+            str   rf
+            inc   rf
+
+            lbnz  viewdirlp             ; loop until terminator found
+
+            irx                         ; recover consumed registers
+            ldxa
+            phi   ra
+            ldxa
+            plo   ra
+
+            ldxa
+            phi   rf
+            ldx
+            plo   rf
+
+            adi   0                     ; return success
+            sep   sret
            
 
 
-
-strloop:   inc   rd
-
-instrcpy:  lda   r6
-           str   rd
-           bnz   strloop
-
-           sep   sret
 
          ; -------------------------------------------------------------------
 
@@ -5492,6 +5608,14 @@ kinit2:    dec     r2                  ; need 2 less
            dec     r2
 
            sep     sret                ; return to caller
+
+strloop:   inc   rd
+
+instrcpy:  lda   r6
+           str   rd
+           bnz   strloop
+
+           sep   sret
 
 
          ; Initialize the disk-related tables that hold the size of each
