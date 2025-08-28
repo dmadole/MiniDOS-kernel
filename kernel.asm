@@ -1132,7 +1132,7 @@ seekback:   ghi   r8                    ; au count to seek forward * 16
 
           ; Need to get the first AU of the file to know where to seek from.
 
-getfirst:   glo   rd                    ; get pointer to dir sector
+            glo   rd                    ; get pointer to dir sector
             adi   9
             plo   r9
             ghi   rd
@@ -4421,111 +4421,153 @@ createok:   glo   rd                    ; get pointer to current sector
             lbr   openexit
 
 
-; *************************************
-; *** delete a file                 ***
-; *** RF - filename                 ***
-; *** Returns:                      ***
-; ***          DF=0 - success       ***
-; ***          DF=1 - error         ***
-; ***             D - Error code    ***
-; *************************************
+saveall:    glo   r7                  ; save consumed registers
+            stxd
+            ghi   r7
+            stxd
 
-deleinit:  plo     re
+            glo   r8                  ; save consumed registers
+            stxd
+            ghi   r8
+            stxd
 
-           glo     r7                  ; save consumed registers
-           stxd
-           ghi     r7
-           stxd
-           glo     r8                  ; save consumed registers
-           stxd
-           ghi     r8
-           stxd
-           glo     r9                  ; save consumed registers
-           stxd
-           ghi     r9
-           stxd
-           glo     ra                  ; save consumed registers
-           stxd
-           ghi     ra
-           stxd
-           glo     rb                  ; save consumed registers
-           stxd
-           ghi     rb
-           stxd
-           glo     rd                  ; save consumed registers
-           stxd
-           ghi     rd
-           stxd
-           glo     rc                  ; save consumed registers
-           stxd
-           ghi     rc
-           stxd
+            glo   ra                  ; save consumed registers
+            stxd
+            ghi   ra
+            stxd
 
-           glo     re
-           adi     2
-           plo     r3
+            glo   rb                  ; save consumed registers
+            stxd
+            ghi   rb
+            stxd
+
+            glo   rc                  ; save consumed registers
+            stxd
+            ghi   rc
+            stxd
+
+            glo   rd                  ; save consumed registers
+            stxd
+            ghi   rd
+            stxd
+
+            glo   rf                  ; save consumed registers
+            stxd
+            ghi   rf
+            stxd
+
+            sep   r3
 
 
-delete:    glo     r3
-           br      deleinit
+restall:   irx                         ; recover consumed registers
+           ldxa
+           phi     rf
+           ldxa
+           plo     rf
 
-           sep     scall               ; find directory
-           dw      finddir
+restexf:   ldxa
+           phi     rd
+           ldxa
+           plo     rd
 
-           sep     scall               ; perform directory search
-           dw      scandir
-           lbnf    delfile             ; jump if file exists
+           ldxa
+           phi     rc
+           ldxa
+           plo     rc
 
-delfail:   ldi     1                   ; signal an error
-           lbr     delexit
+           ldxa
+           phi     rb
+           ldxa
+           plo     rb
 
-delfile:   sep     scall               ; read directory sector for file
-           dw      rawread
-
-           ghi     r9                  ; get offset into sector
-           adi     intdta.1
-           phi     r9 
-
-           inc     r9                  ; point to flags
-           inc     r9
-           inc     r9
-           inc     r9
-           inc     r9
-           inc     r9
-
-           ldn     r9                  ; get flags
-           ani     1                   ; see if directory
-           lbz     delnotdir           ; jump if so
-
-           ldi     (errisdir<<1)+1
-           lbr     delexit
-
-delnotdir: dec     r9                  ; point to starting lump
-           dec     r9
-           dec     r9
-           dec     r9
-
-delgo:     ldn     r9                  ; retrieve it
+           ldxa
            phi     ra
-           ldi     0                   ; and zero in dir entry
-           str     r9
-
-           inc     r9
-
-           ldn     r9
+           ldxa
            plo     ra
-           ldi     0
-           str     r9
 
-           sep     scall               ; write dir sector back
-           dw      rawrite
+           ldxa
+           phi     r8
+           ldxa
+           plo     r8
 
-           sep     scall               ; delete the chain
-           dw      delchain
+           ldxa
+           phi     r7
+           ldxa
+           plo     r7
 
-           ldi     0                   ; signal success
+           ldxa
+           phi     r9
+           ldx
+           plo     r9
 
-           lbr     delexit
+           sep     sret                ; return to caller
+
+          ; ------------------------------------------------------------------
+          ; DELETE - Delete a file
+          ;
+          ; Input:
+          ;   RF - filename
+          ;
+          ; Returns:
+          ;   DF - set on error
+
+delete:     glo   r9
+            stxd
+            ghi   r9
+            stxd
+
+            ldi   saveall.1
+            phi   r9
+            ldi   saveall.0
+            plo   r9
+
+            sep   r9
+
+            sep   scall                 ; find directory the file is in
+            dw    finddir
+            lbdf  delfail
+
+            sep   scall                 ; search within the directory
+            dw    scandir
+            lbdf  delfail
+
+            glo   r9                    ; point to flags in directory entry
+            adi   intdta+6
+            plo   r9
+            ghi   r9
+            adci  intdta.1
+            phi   r9 
+
+            ldn   r9                    ; error if it is a directory
+            ani   1
+            lbnz  delfail
+
+            glo   r9                    ; point to file's starting lump
+            smi   4
+            plo   r9
+
+delgo:      lda   r9                    ; get the starting lump
+            phi   ra
+            ldn   r9
+            plo   ra
+
+            ldi   0                     ; replace it with zero
+            str   r9
+            dec   r9
+            str   r9
+
+            sep   scall                 ; write the directory sector back
+            dw    rawrite
+            lbdf  delfail
+
+            sep   scall                 ; delete the allocation unit chain
+            dw    delchain
+
+            adi   0                     ; signal success
+            lbr   restall
+
+delfail:    smi   0                     ; signal an error
+            lbr   restall
 
            
 ; *************************************
@@ -4537,27 +4579,79 @@ delgo:     ldn     r9                  ; retrieve it
 ; ***          DF=1 - error         ***
 ; ***             D - Error code    ***
 ; *************************************
-rename:    glo     r3
-           br      deleinit
 
-           glo     rc                  ; save copy of destination filename
+rename:     glo   r9
+            stxd
+            ghi   r9
+            stxd
+
+            ldi   saveall.1
+            phi   r9
+            ldi   saveall.0
+            plo   r9
+
+            sep   r9
+
+           glo   rc                  ; save copy of destination filename
            stxd
-           ghi     rc
+           ghi   rc
            stxd
 
-           sep     scall               ; find directory
-           dw      finddir
+           glo   rc                  ; save copy of destination filename
+           stxd
+           ghi   rc
+           stxd
 
-           sep     scall               ; perform directory search
-           dw      scandir
-           lbnf    renfile             ; jump if file exists
+           sep   scall               ; find directory
+           dw    finddir
+           lbdf  renfail
 
-           irx                         ; drop filename from stack and fail
            irx
-           lbr     delfail
+           ldxa
+           phi   rf
+           ldx
+           plo   rf
 
-renfile:   sep     scall               ; read directory sector for file
-           dw      rawread
+           glo   rb
+           stxd
+           ghi   rb
+           stxd
+
+           glo   rf
+           plo   rb
+           ghi   rf
+           phi   rb
+
+           sep   scall               ; perform directory search
+           dw    scandir
+           lbnf  renxpop
+
+           irx
+           ldxa
+           phi   rb
+           ldx
+           plo   rb
+
+           ldi   0
+           phi   r8
+           plo   r8
+           phi   r7
+           plo   r7
+           
+           plo   rc
+
+           sep   scall
+           dw    seek
+
+           sep   scall               ; perform directory search
+           dw    scandir
+           lbdf  renfail
+
+           irx                         ; recover new name
+           ldxa
+           phi     rf
+           ldx
+           plo     rf
 
            glo     r9                  ; point to filename
            adi     12
@@ -4566,12 +4660,6 @@ renfile:   sep     scall               ; read directory sector for file
            adci    intdta.1
            phi     r9 
 
-           irx                         ; recover new name
-           ldxa
-           phi     rf
-           ldx
-           plo     rf
-
            sep     scall               ; copy filename from rf to r9
            dw      copyname
            lbnf    delfail
@@ -4579,41 +4667,15 @@ renfile:   sep     scall               ; read directory sector for file
            sep     scall               ; write dir sector back
            dw      rawrite
 
-           ldi     0                   ; signal success
+           adi     0                   ; signal success
 
-delexit:   shr                         ; shift result into DF
+renxpop:   irx
+           irx
 
-           irx                         ; recover consumed registers
-           ldxa
-           phi     rc
-           ldxa
-           plo     rc
-           ldxa
-           phi     rd
-           ldxa
-           plo     rd
-           ldxa
-           phi     rb
-           ldxa
-           plo     rb
-           ldxa
-           phi     ra
-           ldxa
-           plo     ra
-           ldxa
-           phi     r9
-           ldxa
-           plo     r9
-           ldxa
-           phi     r8
-           ldxa
-           plo     r8
-           ldxa
-           phi     r7
-           ldx
-           plo     r7
+renfail:   irx                         ; drop filename from stack and fail
+           irx
 
-           sep     sret                ; return to caller
+           lbr     delfail
 
 
 ; *******************************
@@ -4628,34 +4690,17 @@ rmdir:     ldn     rf
            sep     scall               ; check for final slash
            dw      finalsl
 
-           glo     r7                  ; save consumed registers
-           stxd
-           ghi     r7
-           stxd
-           glo     r8                  ; save consumed registers
-           stxd
-           ghi     r8
-           stxd
-           glo     r9                  ; save consumed registers
-           stxd
-           ghi     r9
-           stxd
-           glo     ra                  ; save consumed registers
-           stxd
-           ghi     ra
-           stxd
-           glo     rb                  ; save consumed registers
-           stxd
-           ghi     rb
-           stxd
-           glo     rd                  ; save consumed registers
-           stxd
-           ghi     rd
-           stxd
-           glo     rc                  ; save consumed registers
-           stxd
-           ghi     rc
-           stxd
+            glo   r9
+            stxd
+            ghi   r9
+            stxd
+
+            ldi   saveall.1
+            phi   r9
+            ldi   saveall.0
+            plo   r9
+
+            sep   r9
 
            ghi     rf
            phi     rb
@@ -4666,10 +4711,8 @@ rmdir:     ldn     rf
            dw      o_opendir
            lbnf    rmdirlp             ; jump if dir opened
 
-           ldi     errnoffnd           ; signal not found error
-rmdirerr:  shl
-           ori     1
-           lbr     delexit             ; and return
+rmdirerr:  smi     0
+           lbr     restall
 
 rmdirlp:   ldi     0                   ; need to read 32 bytes
            phi     rc
@@ -4709,7 +4752,6 @@ rmdirno:   ghi     rb
            glo     rb
            plo     rf
 
-           ldi     errdirnotempty      ; indicate not empty error
            lbr     rmdirerr            ; and error out
 
 rmdireof:  ghi     rb
@@ -5016,40 +5058,17 @@ notexec:   ldi      errnotexec           ; signal non-executable file
 ; ***          DF=1 - Error   ***
 ; *******************************
 
-mkdir:      glo   rf
-            stxd
-            ghi   rf
-            stxd
-            glo   rd
-            stxd
-            ghi   rd
-            stxd
-            glo   rc
-            stxd
-            ghi   rc
-            stxd
-            glo   rb
-            stxd
-            ghi   rb
-            stxd
-            glo   ra
-            stxd
-            ghi   ra
-            stxd
-            glo   r9
+mkdir:      glo   r9
             stxd
             ghi   r9
             stxd
-            glo   r8
-            stxd
-            ghi   r8
-            stxd
-            glo   r7
-            stxd
-            ghi   r7
-            stxd
 
+            ldi   saveall.1
+            phi   r9
+            ldi   saveall.0
+            plo   r9
 
+            sep   r9
 
             ldn   rf                    ; error if filename is null
             lbz   mkdirer
@@ -5194,106 +5213,47 @@ mkdirgo:    sep   scall                 ; if parent not exist then error
 
 mkdirer:    smi   0
 
-mkdirrt:    irx                         ; recover consumed registers
-            ldxa
-            phi   r7
-            ldxa
-            plo   r7
-            ldxa
-            phi   r8
-            ldxa
-            plo   r8
-            ldxa
-            phi   r9
-            ldxa
-            plo   r9
-            ldxa
-            phi   ra
-            ldxa
-            plo   ra
-            ldxa
-            phi   rb
-            ldxa
-            plo   rb
-            ldxa
-            phi   rc
-            ldxa
-            plo   rc
-            ldxa
-            phi   rd
-            ldxa
-            plo   rd
-            ldxa
-            phi   rf
-            ldx
-            plo   rf
-
-            sep   sret                  ; and return to caller
+mkdirrt:    lbr   restall
 
 
-; *************************************
-; *** Change/view current directory ***
-; *** RF - pathname                 ***
-; ***      first byte 0 to view     ***
-; *** Returns: DF=0 - success       ***
-; ***          DF=1 - error         ***
-; *************************************
+          ; ------------------------------------------------------------------
+          ; CHDIR - Change or retrieve current directory
+          ;
+          ; Input:
+          ;   RF - pathname (empty string to retrieve)
+          ;
+          ; Returns:
+          ;   DF - set if error (path does not exist)
 
 chdir:      ldn   rf                    ; jump if to view
             lbz   viewdir
-
-            glo   r7
-            stxd
-            ghi   r7
-            stxd
-
-            glo   r8
-            stxd
-            ghi   r8
-            stxd
 
             glo   r9
             stxd
             ghi   r9
             stxd
 
-            glo   ra
-            stxd
-            ghi   ra
-            stxd
+            ldi   saveall.1
+            phi   r9
+            ldi   saveall.0
+            plo   r9
 
-            glo   rb
-            stxd
-            ghi   rb
-            stxd
+            sep   r9
 
-            glo   rc
-            stxd
-            ghi   rc
-            stxd
-
-            glo   rd
-            stxd
-            ghi   rd
-            stxd
-
-            glo   rf
-            stxd
-            ghi   rf
-            stxd
+          ; Only set a working directory path if it exists. Try to find the
+          ; directory with finddir, if it consumes the entire path, then it
+          ; was a directory path ending in a slash.
 
             sep   scall                 ; find directory
             dw    finddir
             lbdf  nochdir               ; error if directory was not found
 
-          ; If entire path consumed, then it was a directory path ending in
-          ; a slash, proceed to change directory.
-
             ldn   rb                    ; proceed if no file part
             lbz   dochdir
 
-          ; The remaining part of the path might be a directory, or it might
-          ; be a file, or it might not even exist. Look it up in directory.
+          ; Otherwise, any remaining part of the path might be a directory,
+          ; or it might be a file, or it might not even exist. Search for it
+          ; using scandir, then see if what was found is a directory.
  
             sep   scall                 ; error if it doesn't exist at all
             dw    scandir
@@ -5366,7 +5326,8 @@ chdirlp:    lda   rb                    ; get byte from path
 
             lbnz  chdirlp               ; loop until terminator
 
-          ; Make sure the current working directory path ends in a slash.
+          ; Make sure the current working directory path ends in a slash,
+          ; adding one if it doesn't already exist.
 
             dec   ra                    ; back up to last character of path
             dec   ra
@@ -5382,58 +5343,20 @@ chdirlp:    lda   rb                    ; get byte from path
             ldi   0                     ; and terminating null
             str   ra
 
+          ; Since the directory was found and updated, return success.
+
 chdirok:    adi   0                     ; operation was successful
 
-            irx                         ; restore saved registers
-chdirex:    ldxa
-            phi   rd
-            ldxa
-            plo   rd
+            irx
+            lbr   restexf
 
-            ldxa
-            phi   rc
-            ldxa
-            plo   rc
-
-            ldxa
-            phi   rb
-            ldxa
-            plo   rb
-
-            ldxa
-            phi   ra
-            ldxa
-            plo   ra
-
-            ldxa
-            phi   r9
-            ldxa
-            plo   r9
-
-            ldxa
-            phi   r8
-            ldxa
-            plo   r8
-
-            ldxa
-            phi   r7
-            ldx
-            plo   r7
-
-            sep   sret                  ; return
+          ; If the path specified does not exist, then return failure.
 
 nochdir:    smi   0                     ; operation failed
+            lbr   restall
 
-            irx                         ; restore the start of new path
-            ldxa
-            phi   rf
-            ldxa
-            plo   rf
-
-            lbr   chdirex               ; restore the rest and return
-
-
-
+          ; If the path passed is an empty string (not a null pointer) then
+          ; copy the current working directory into that string.
 
 viewdir:    glo   rf                    ; save consumed registers
             stxd
@@ -5455,6 +5378,8 @@ viewdirlp:  lda   ra                    ; copy each byte from current path
             inc   rf
 
             lbnz  viewdirlp             ; loop until terminator found
+
+          ; Return success always as this operation cannot fail.
 
             irx                         ; recover consumed registers
             ldxa
